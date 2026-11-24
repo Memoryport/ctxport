@@ -15,7 +15,7 @@ from .adapters._render import render_message_md, render_transcript, visible
 from .adapters.base import ExportOptions
 from .models import MemoryItem
 from .redact import redact
-from .store import AmbiguousId, Store, default_home
+from .store import AmbiguousId, NewerDatabase, Store, default_home
 from .utils import fmt_time, parse_since, write_managed
 
 
@@ -521,6 +521,9 @@ def main(argv: Optional[list] = None) -> int:
         return args.fn(args) or 0
     except KeyError as e:
         info(str(e).strip("'\""))
+        return 2
+    except NewerDatabase as e:
+        info(str(e))
         return 2
     except KeyboardInterrupt:
         return 130

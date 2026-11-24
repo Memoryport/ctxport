@@ -45,6 +45,19 @@ CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
 
 DIALOGUE_KINDS = ("message",)
 
+# Database layout version, kept in SQLite's `PRAGMA user_version`. Version 1 is the layout in SCHEMA above
+# (databases from 0.1.0 have user_version 0 and already match it). To change the layout:
+#   1. bump SCHEMA_VERSION,
+#   2. add MIGRATIONS[new_version] = SQL that upgrades a database of the previous version (ALTER TABLE ...),
+#   3. update SCHEMA so brand-new databases are created in the new layout directly.
+# Migrations run in order, each in its own transaction, the next time the store is opened.
+SCHEMA_VERSION = 1
+MIGRATIONS: dict = {}
+
+
+class NewerDatabase(RuntimeError):
+    """The database was written by a newer ctxport whose layout this version doesn't know."""
+
 
 def default_home() -> Path:
     return Path(os.environ.get("CTXPORT_HOME") or Path.home() / ".ctxport").expanduser()
@@ -99,6 +112,20 @@ def private_write_text(path: Path, text: str) -> None:
     _chmod(path, 0o600)
 
 
+def _split_sql(script: str) -> list:
+    """Split a migration script into statements (executescript would commit outside our transaction)."""
+    out, buf = [], ""
+    for line in script.splitlines(keepends=True):
+        buf += line
+        if sqlite3.complete_statement(buf):
+            if buf.strip():
+                out.append(buf.strip())
+            buf = ""
+    if buf.strip():
+        out.append(buf.strip())
+    return out
+
+
 class AmbiguousId(ValueError):
     pass
 
@@ -121,13 +148,40 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA foreign_keys=ON")
-        self.db.executescript(SCHEMA)
+        self._migrate()
         self.fts = self._init_fts()
         self.db.commit()
         for suffix in ("", "-wal", "-shm"):
             p = Path(str(self.path) + suffix)
             if p.exists():
                 _chmod(p, 0o600)
+
+    def schema_version(self) -> int:
+        return self.db.execute("PRAGMA user_version").fetchone()[0]
+
+    def _migrate(self) -> None:
+        v = self.schema_version()
+        if v > SCHEMA_VERSION:
+            self.db.close()
+            raise NewerDatabase(f"{self.path} was created by a newer ctxport (database version {v}, this ctxport "
+                                f"supports up to {SCHEMA_VERSION}). Upgrade ctxport: pip install -U ctxport")
+        fresh = not self.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='conversations'").fetchone()
+        if fresh or v == 0:
+            # new database, or one from 0.1.0 (no version stamp yet, layout of version 1)
+            self.db.executescript(SCHEMA)
+            v = SCHEMA_VERSION if fresh else 1
+            self.db.execute(f"PRAGMA user_version = {int(v)}")
+            self.db.commit()
+        for target in range(v + 1, SCHEMA_VERSION + 1):
+            try:
+                self.db.execute("BEGIN")
+                for stmt in _split_sql(MIGRATIONS[target]):
+                    self.db.execute(stmt)
+                self.db.execute(f"PRAGMA user_version = {int(target)}")
+                self.db.commit()
+            except BaseException:
+                self.db.rollback()
+                raise
 
     def _init_fts(self) -> bool:
         try:

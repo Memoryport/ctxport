@@ -75,6 +75,13 @@ optional `max_chars`) — you get managed blocks, backups and `--project` for fr
 Message kinds: `message`, `tool_call`, `tool_result`, `reasoning`, `artifact`, `attachment`, `system_prompt`.
 Roles: `user`, `assistant`, `system`, `tool`, `unknown`.
 
+## Changing the database layout
+
+`store.py` keeps the layout version in SQLite's `PRAGMA user_version`. To add a column, table or index:
+bump `SCHEMA_VERSION`, add `MIGRATIONS[<new version>]` with the SQL that upgrades the previous version, and
+update `SCHEMA` so new databases start in the new layout. Add a test in `tests/test_store_schema.py` that
+opens a database of the previous version and checks its data survives the upgrade.
+
 ## Dev loop
 
 ```bash
