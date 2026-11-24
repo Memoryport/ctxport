@@ -252,4 +252,4 @@ class ChatGPTExporter(Exporter):
         body = render_memories_plain(memories, opts.redact)
         text = ("Please remember the following facts and preferences about me (migrated from my other AI tools):\n"
                 "请记住以下关于我的信息和偏好：\n\n" + body)
-        return [OutputFile("chatgpt/chatgpt-memory.txt", text, note="paste into ChatGPT")]
+        return [OutputFile("chatgpt/chatgpt-memory.txt", text)]

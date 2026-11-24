@@ -329,6 +329,5 @@ class ChatboxExporter(Exporter):
         data["chat-sessions-list"] = sessions
         prompt = ("Background about me (migrated with ctxport):\n关于我的背景信息：\n\n"
                   + render_memories_md(memories, opts.redact, heading_level=2))
-        return [OutputFile("chatbox/chatbox-import-v1.json", json.dumps(data, ensure_ascii=False, indent=1),
-                           note=f"{len(sessions)} conversations"),
-                OutputFile("chatbox/chatbox-system-prompt.md", prompt, note="system prompt")]
+        return [OutputFile("chatbox/chatbox-import-v1.json", json.dumps(data, ensure_ascii=False, indent=1)),
+                OutputFile("chatbox/chatbox-system-prompt.md", prompt)]

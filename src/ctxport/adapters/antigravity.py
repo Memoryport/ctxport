@@ -23,7 +23,6 @@ from .base import Importer, register
 from .gemini_cli import gemini_home
 
 DATA_DIRS = ("antigravity", "antigravity-ide", "antigravity-cli", "antigravity-backup")
-UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
 
 
 # ------------------------------------------------------------------ generic protobuf wire decoder

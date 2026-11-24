@@ -47,7 +47,7 @@ class InstructionFileExporter(Exporter):
             body = body[: self.max_chars].rsplit("\n", 1)[0] + "\n\n<!-- truncated by ctxport -->\n"
         preview = make_block(body, self.name)
         return [OutputFile(rel_path=f"{self.name}/{self.filename}", content=preview, apply_path=str(target),
-                           managed=True, note=f"managed block for {target}")]
+                           managed=True)]
 
 
 # Markdown headings, and lines that are only bold text ("**Work context**") or a short italic label

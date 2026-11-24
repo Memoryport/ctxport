@@ -258,4 +258,4 @@ class ClaudeAIExporter(Exporter):
         body = render_memories_plain(memories, opts.redact)
         text = ("Here is what I'd like you to remember about me, exported from my other AI assistants:\n"
                 "以下是我希望你记住的关于我的信息：\n\n" + body)
-        return [OutputFile("claude-ai/claude-memory-import.txt", text, note="paste at claude.ai/import-memory")]
+        return [OutputFile("claude-ai/claude-memory-import.txt", text)]
