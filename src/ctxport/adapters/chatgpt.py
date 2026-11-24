@@ -246,10 +246,30 @@ class ChatGPTExporter(Exporter):
     label = "ChatGPT (paste text)"
     instructions = ("ChatGPT has no bulk memory import. Open chatgpt-memory.txt and either paste it into "
                     "Settings → Personalization → Custom instructions, or send it in a chat with Memory on and "
-                    "ask ChatGPT to remember each line.")
+                    "ask ChatGPT to remember each line. chatgpt-custom-instructions.txt is the part that fits the "
+                    "\"What would you like ChatGPT to know about you?\" field (1,500 characters), most important first.")
 
     def render(self, store, memories: list, opts: ExportOptions) -> list:
         body = render_memories_plain(memories, opts.redact)
         text = ("Please remember the following facts and preferences about me (migrated from my other AI tools):\n"
                 "请记住以下关于我的信息和偏好：\n\n" + body)
-        return [OutputFile("chatgpt/chatgpt-memory.txt", text)]
+        return [OutputFile("chatgpt/chatgpt-memory.txt", text),
+                OutputFile("chatgpt/chatgpt-custom-instructions.txt", custom_instructions(memories, opts.redact))]
+
+
+# "What would you like ChatGPT to know about you?" takes at most 1,500 characters.
+CUSTOM_INSTRUCTIONS_LIMIT = 1500
+
+
+def custom_instructions(memories: list, redact: bool = True, limit: int = CUSTOM_INSTRUCTIONS_LIMIT) -> str:
+    """The memories that fit ChatGPT's custom-instructions field: every category's top ones first, then the most
+    seen. Paste it into Settings → Personalization → Custom instructions."""
+    from ..profile import fit_budget
+
+    def text(ms: list, more: int = 0) -> str:
+        return render_memories_plain(ms, redact).rstrip()
+
+    if len(text(memories)) <= limit:
+        return text(memories) + "\n"
+    kept, _ = fit_budget(memories, [], lambda ms, ts, more: len(text(ms)) + 1, limit)
+    return text(kept) + "\n"

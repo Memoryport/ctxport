@@ -37,8 +37,22 @@ class InstructionFileExporter(Exporter):
             mems = [m for m in memories if m.scope == "global" or m.scope.endswith(name) or m.scope.endswith(str(opts.project))]
         else:
             mems = memories
-        text = render_memories_md(mems, redact=opts.redact, heading_level=3, max_chars=self.max_chars)
-        return f"## About the user (migrated by ctxport)\n\n{INTRO}\n\n{text}"
+        head = f"## About the user (migrated by ctxport)\n\n{INTRO}\n\n"
+
+        def full(ms: list, omitted: int = 0) -> str:
+            text = head + render_memories_md(ms, redact=opts.redact, heading_level=3)
+            if omitted:
+                text += f"\n<!-- ctxport: {omitted} more memories did not fit the size limit -->\n"
+            return text
+
+        text = full(mems)
+        if self.max_chars and len(text) > self.max_chars:
+            # Over the limit: keep every category's top memories first, then the most seen ones, instead of
+            # cutting the file off after the first few categories.
+            from ..profile import fit_budget
+            kept, _ = fit_budget(mems, [], lambda ms, ts, more: len(full(ms, more)), self.max_chars)
+            text = full(kept, len(mems) - len(kept))
+        return text
 
     def render(self, store, memories: list, opts: ExportOptions) -> list:
         target = self.target_path(opts)

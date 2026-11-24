@@ -142,18 +142,29 @@ def fit_budget(mems: list, titles: list, measure, max_chars: int, per_category: 
     for m in mems:
         by_cat.setdefault(m.category or "general", []).append(m)
     first = [m for ms in by_cat.values() for m in ms[:per_category]]
-    rest = [m for m in mems if m not in first]
+    first_ids = {id(m) for m in first}
+    rest = [m for m in mems if id(m) not in first_ids]
     rest.sort(key=lambda m: (m.status != "accepted", -(m.seen_count or 1)))
     order = [("m", m) for m in first] + [("t", t) for t in titles[:min_topics]] + \
             [("m", m) for m in rest] + [("t", t) for t in titles[min_topics:]]
-    chosen_m: list = []
-    chosen_t: list = []
+    # chosen items are tracked by identity (sets), not with `in` on lists of dataclasses, which compared every
+    # field of every memory on each step
+    chosen_m: set = set()
+    chosen_t: set = set()
     total = len(mems) + len(titles)
+
+    def pick(cm: set, ct: set) -> tuple:
+        return [m for m in mems if id(m) in cm], [t for i, t in enumerate(titles) if i in ct]
+
+    title_idx = {id(t): i for i, t in enumerate(titles)}
     for kind, item in order[:600]:
-        tm, tt = (chosen_m + [item], chosen_t) if kind == "m" else (chosen_m, chosen_t + [item])
-        if measure([m for m in mems if m in tm], [t for t in titles if t in tt], total - len(tm) - len(tt)) <= max_chars:
+        if kind == "m":
+            tm, tt = chosen_m | {id(item)}, chosen_t
+        else:
+            tm, tt = chosen_m, chosen_t | {title_idx[id(item)]}
+        if measure(*pick(tm, tt), total - len(tm) - len(tt)) <= max_chars:
             chosen_m, chosen_t = tm, tt
-    return [m for m in mems if m in chosen_m], [t for t in titles if t in chosen_t]
+    return pick(chosen_m, chosen_t)
 
 
 def copy_to_clipboard(text: str) -> bool:
