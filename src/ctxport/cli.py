@@ -133,7 +133,11 @@ def cmd_memories(args) -> int:
         if a == "list":
             status = None if args.all else (("accepted", "candidate") if args.candidates else ("accepted",))
             for m in s.memories(status=status, platform=args.platform):
-                print(f"{m.id}  [{m.status[:4]}] {m.scope:>10} {m.category:<18} {redact(m.text)[:160]}")
+                seen = f"×{m.seen_count}" if (m.seen_count or 1) > 1 else ""
+                print(f"{m.id}  [{m.status[:4]}] {m.scope:>10} {m.category:<18} {seen:>4} {redact(m.text)[:160]}")
+            return 0
+        if a == "dedupe":
+            print(f"{s.dedupe_memories()} near-duplicate memories merged")
             return 0
         if a == "coverage":
             from .extract import coverage_report, format_coverage
@@ -378,7 +382,8 @@ def cmd_profile(args) -> int:
     if not args.out and not copied:
         print(text, end="")
     info(f"profile: {st['memories']} memories, {st['topics']} recent topics, {st['chars']} characters"
-         + (" + an LLM summary" if st["summary"] else ""))
+         + (" + an LLM summary" if st["summary"] else "")
+         + (f"; {st['omitted']} left out to fit --max-chars" if st.get("omitted") else ""))
     if st["used_candidates"] and not args.include_candidates:
         info("Note: nothing is reviewed yet, so this uses unreviewed candidates. "
              "Check them with `ctxport memories edit` before sharing.")
@@ -526,6 +531,7 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--candidates", action="store_true", help="include candidates")
     q.add_argument("--all", action="store_true", help="include rejected too")
     q.add_argument("--platform")
+    msub.add_parser("dedupe", help="merge near-duplicate memories (same category, ~80% alike)")
     q = msub.add_parser("coverage", help="which categories are empty, which conversations gave nothing")
     q.add_argument("--json", action="store_true")
     q = msub.add_parser("add")

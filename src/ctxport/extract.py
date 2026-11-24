@@ -127,7 +127,7 @@ def run_extract(store: Store, llm: Optional[LLMClient] = None, platform: Optiona
         for text, cat in pairs:
             mem = MemoryItem(text=text, platform=conv.platform, category=cat, source_ref=cid, confidence=conf,
                              status="candidate", scope=scope)
-            if store.upsert_memory(mem) == "new":
+            if store.upsert_memory(mem, seen_at=conv.updated_at or conv.created_at) == "new":
                 stats["new"] += 1
         store.mark_extracted(cid, method)
         stats["conversations"] += 1
@@ -150,18 +150,59 @@ Lines you delete are left unchanged. Then run `ctxport memories edit` again to a
 _LINE = re.compile(r"^\s*-\s*\[( |x|X)\]\s*(.*?)\s*<!--\s*([0-9a-f]{16})\s+([\w:-]+)\s*-->\s*$")
 
 
+# Categories where a newer, related fact usually replaces an older one (a new editor, a new job, a new project).
+REPLACEABLE = ("identity", "work", "project", "tooling")
+RELATED = 0.35          # similar enough to be about the same thing …
+STALE_GAP = 180 * 86400  # … and mentioned this much later
+
+
+def possibly_outdated(memories: list) -> dict:
+    """{id of an older memory: text of the newer related one}. Only a hint for review, never applied."""
+    from .models import similarity
+    from .store import NEAR_DUPLICATE
+    out: dict = {}
+    groups: dict = {}
+    for m in memories:
+        if m.category in REPLACEABLE and m.last_seen:
+            groups.setdefault((m.scope, m.category), []).append(m)
+    for items in groups.values():
+        for old in items:
+            for new in items:
+                if new is old or new.last_seen - old.last_seen < STALE_GAP:
+                    continue
+                if RELATED <= similarity(old.text, new.text) < NEAR_DUPLICATE:
+                    out[old.id] = new.text
+                    break
+    return out
+
+
+def _review_note(m, outdated: dict) -> str:
+    bits = []
+    if m.status != "accepted":
+        bits.append(f"candidate {m.platform} {m.confidence:.1f}")
+    if (m.seen_count or 1) > 1:
+        bits.append(f"seen in {m.seen_count} conversations")
+    if m.last_seen:
+        bits.append(f"last {time.strftime('%Y-%m-%d', time.localtime(m.last_seen))}")
+    if m.id in outdated:
+        newer = " ".join(outdated[m.id].split())[:80].replace("--", "–").replace(">", "›")
+        bits.append("maybe outdated, newer: " + newer)
+    return f"  <!-- {'; '.join(bits)} -->" if bits else ""
+
+
 def render_review(memories: list) -> str:
+    outdated = possibly_outdated(memories)
     lines = [REVIEW_HEADER]
     by_scope: dict = {}
     for m in memories:
         by_scope.setdefault(m.scope, []).append(m)
     for scope in sorted(by_scope, key=lambda s: (s != "global", s)):
         lines.append(f"## {scope}\n")
-        for m in sorted(by_scope[scope], key=lambda x: (x.status != "accepted", x.category, -x.confidence)):
+        for m in sorted(by_scope[scope], key=lambda x: (x.status != "accepted", x.category, -(x.seen_count or 1),
+                                                        -x.confidence)):
             box = "x" if m.status == "accepted" else " "
             text = " ".join(m.text.split())
-            lines.append(f"- [{box}] {text} <!-- {m.id} {m.category} -->"
-                         + ("" if m.status == "accepted" else f"  <!-- candidate {m.platform} {m.confidence:.1f} -->"))
+            lines.append(f"- [{box}] {text} <!-- {m.id} {m.category} -->" + _review_note(m, outdated))
         lines.append("")
     return "\n".join(lines)
 
@@ -169,7 +210,7 @@ def render_review(memories: list) -> str:
 def parse_review(text: str) -> list:
     out = []
     for line in text.splitlines():
-        line = re.sub(r"\s*<!--\s*candidate[^>]*-->\s*$", "", line)
+        line = re.sub(r"(<!--\s*[0-9a-f]{16}\s+[\w:-]+\s*-->)\s*<!--[^>]*-->\s*$", r"\1", line)
         m = _LINE.match(line)
         if m:
             out.append({"checked": m.group(1).lower() == "x", "text": m.group(2).strip(), "id": m.group(3),

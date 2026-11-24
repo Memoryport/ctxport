@@ -145,6 +145,34 @@ def normalize_memory_text(text: str) -> str:
     return t.rstrip("。.!！;；")
 
 
+_SUBJECT = re.compile(r"^(the user|user|i am|i'm|i|my|用户|我是|我的|我们|我)\s*", re.I)
+_NON_WORD = re.compile(r"[\W_]+", re.UNICODE)
+
+
+def similarity_key(text: str) -> str:
+    """Loose form for spotting near-duplicates: width-folded, lower case, no subject, no spaces or punctuation.
+    "I use VS Code." / "用户使用 VSCode" / "我用vscode" all come out close."""
+    import unicodedata
+    t = unicodedata.normalize("NFKC", text or "").lower().strip()
+    t = _SUBJECT.sub("", t)
+    return _NON_WORD.sub("", t)
+
+
+def _grams(key: str) -> set:
+    return {key[i:i + 2] for i in range(len(key) - 1)} if len(key) > 1 else {key}
+
+
+def similarity(a: str, b: str) -> float:
+    """Dice coefficient on character bigrams of the similarity keys (0..1). Works without word splitting."""
+    ka, kb = similarity_key(a), similarity_key(b)
+    if not ka or not kb:
+        return 0.0
+    if ka == kb:
+        return 1.0
+    ga, gb = _grams(ka), _grams(kb)
+    return 2 * len(ga & gb) / (len(ga) + len(gb))
+
+
 def memory_id(text: str, scope: str = "global") -> str:
     return hashlib.sha1(f"{scope}|{normalize_memory_text(text)}".encode("utf-8")).hexdigest()[:16]
 
@@ -160,6 +188,10 @@ class MemoryItem:
     scope: str = "global"
     created_at: float = field(default_factory=time.time)
     id: str = ""
+    seen_count: int = 1                 # how many conversations mention it
+    first_seen: Optional[float] = None  # earliest / latest time a conversation mentioned it
+    last_seen: Optional[float] = None
+    question: Optional[str] = None      # questionnaire id it answers, when it came from a question
 
     def __post_init__(self) -> None:
         self.text = (self.text or "").strip()
