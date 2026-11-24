@@ -180,7 +180,8 @@ def test_ingest_server_pairing_and_import(tmp_path, server):
     assert {"Prefers dark roast", "I teach chemistry"} <= mems
     s.close()
     inbox = tmp_path / "ctxport_home" / "inbox" / "chatgpt"
-    assert (inbox / "cg-1.json").exists() and (inbox / "_account.json").exists()
+    assert (inbox / "cg-1.json.gz").exists() and (inbox / "_account.json").exists()
+    assert not (inbox / "cg-1.json").exists()
     # the token itself is never stored, only its hash
     assert token not in (tmp_path / "ctxport_home" / "ingest-pairing.json").read_text()
 
@@ -229,7 +230,7 @@ def test_private_permissions(tmp_path, paired):
         {"id": "g1", "title": "t", "messages": [{"role": "user", "text": "hi"}]}]}, token=token)[0] == 200
     mode = lambda p: p.stat().st_mode & 0o777  # noqa: E731
     assert mode(home) == 0o700 and mode(home / "inbox") == 0o700 and mode(home / "inbox" / "gemini-web") == 0o700
-    assert mode(home / "inbox" / "gemini-web" / "g1.json") == 0o600
+    assert mode(home / "inbox" / "gemini-web" / "g1.json.gz") == 0o600
     assert mode(home / "ctxport.db") == 0o600
     assert mode(home / "ingest-pairing.json") == 0o600
     # an existing, too-open home is tightened when the store is opened
@@ -321,3 +322,30 @@ def test_gemini_rescrape_updates_conversation(tmp_path, paired):
     assert len(s.get_conversation("gemini-web:gem1").messages) == 4
     s.close()
     assert _post(port, "/known?platform=gemini-web", token=token)[1]["known"] == {"gem1": "4"}
+
+
+def test_inbox_gzip_and_legacy_plain_files(tmp_path):
+    """New inbox files are gzip-compressed; plain .json from older versions still import and `compact` gzips them."""
+    import gzip as _gz
+    from ctxport import ingest
+    from ctxport.cli import main
+    home = tmp_path / "ctxport_home"
+    inbox = home / "inbox" / "chatgpt"
+    inbox.mkdir(parents=True)
+    conv = _chatgpt_api_conv(tmp_path)
+    (inbox / "cg-1.json").write_text(json.dumps(conv), encoding="utf-8")  # legacy plain file
+    s = Store(home / "ctxport.db")
+    (r,) = pipeline.sync(s, only=["chatgpt"])
+    assert r.conversations == 1 and s.get_conversation("chatgpt:cg-1").title == "Induction"
+    s.close()
+    assert main(["compact"]) == 0
+    assert not (inbox / "cg-1.json").exists()
+    data = json.loads(_gz.decompress((inbox / "cg-1.json.gz").read_bytes()))
+    assert data["conversation_id"] == "cg-1"
+    # a fresh store re-imports the compressed copy, and only once if both copies exist
+    (inbox / "cg-1.json").write_text(json.dumps(conv), encoding="utf-8")
+    s = Store(tmp_path / "fresh.db")
+    (r,) = pipeline.sync(s, only=["chatgpt"])
+    assert r.units == 1 and r.conversations == 1
+    s.close()
+    assert ingest.compress_inbox()[0] == 1

@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 from ..models import Conversation, ImportResult, MemoryItem, Message, OutputFile
-from ..utils import Bundle, compact_json, json_strings, parse_time, sanitize_raw
+from ..utils import is_json_name, read_json_file, Bundle, compact_json, json_strings, parse_time, sanitize_raw
 from ._render import render_memories_plain
 from .base import ExportOptions, Exporter, Importer, inbox_units, is_account_file, is_inbox, register
 
@@ -190,7 +190,7 @@ class ChatGPTImporter(Importer):
         if is_account_file(unit):
             return self._account(Path(unit))
         with Bundle(unit) as b:
-            files = b.find(CONV_FILE) or ([b.names()[0]] if not b.is_zip and Path(unit).suffix == ".json" else [])
+            files = b.find(CONV_FILE) or ([b.names()[0]] if not b.is_zip and is_json_name(Path(unit).name) else [])
             if not files:
                 res.warnings.append("no conversations*.json found")
             seen_mem = set()
@@ -226,7 +226,7 @@ class ChatGPTImporter(Importer):
 
     def _account(self, p: Path) -> ImportResult:
         res = ImportResult()
-        data = json.loads(p.read_text(encoding="utf-8"))
+        data = read_json_file(p)
         for m in data.get("memories") or []:
             text = m.get("content") if isinstance(m, dict) else m
             if isinstance(text, str) and text.strip():

@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..models import Conversation, ImportResult, MemoryItem, Message, OutputFile
-from ..utils import Bundle, compact_json, json_strings, parse_time, sanitize_raw, text_of
+from ..utils import is_json_name, read_json_file, Bundle, compact_json, json_strings, parse_time, sanitize_raw, text_of
 from ._instruction import parse_instruction_text
 from ._render import render_memories_plain
 from .base import ExportOptions, Exporter, Importer, inbox_units, is_account_file, is_inbox, register
@@ -121,9 +121,8 @@ class ClaudeAIImporter(Importer):
     def load(self, unit: Path) -> ImportResult:
         res = ImportResult()
         unit = Path(unit)
-        if unit.is_file() and unit.suffix == ".json" and unit.name != "conversations.json":
-            import json as _json
-            data = _json.loads(unit.read_text(encoding="utf-8"))
+        if unit.is_file() and is_json_name(unit.name) and unit.name != "conversations.json":
+            data = read_json_file(unit)
             if isinstance(data, dict) and "chat_messages" in data:
                 res.conversations.append(convert_conversation(data))
                 return res

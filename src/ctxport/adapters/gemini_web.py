@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 
 from ..models import Conversation, ImportResult, Message, OutputFile
-from ..utils import Bundle, parse_time, sanitize_raw, strip_html
+from ..utils import is_json_name, read_json_file, Bundle, parse_time, sanitize_raw, strip_html
 from ._render import render_memories_plain
 from .base import ExportOptions, Exporter, Importer, inbox_units, is_inbox, register
 
@@ -65,9 +65,8 @@ class GeminiWebImporter(Importer):
     def load(self, unit: Path) -> ImportResult:
         res = ImportResult()
         unit = Path(unit)
-        if unit.is_file() and unit.suffix == ".json" and unit.name != "MyActivity.json":
-            import json as _json
-            data = _json.loads(unit.read_text(encoding="utf-8"))
+        if unit.is_file() and is_json_name(unit.name) and unit.name != "MyActivity.json":
+            data = read_json_file(unit)
             if isinstance(data, dict) and isinstance(data.get("messages"), list):
                 return self._load_scraped(data, unit)
         with Bundle(unit) as b:

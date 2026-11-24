@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import gzip
 import hashlib
 import hmac
 import json
@@ -30,7 +31,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import __version__
-from .store import Store, default_home, ensure_private_dir, private_write_text
+from .store import Store, default_home, ensure_private_dir, private_write_bytes, private_write_text
 
 PLATFORMS = ("chatgpt", "claude-ai", "gemini-web")
 MAX_BODY = 200 * 1024 * 1024
@@ -192,8 +193,13 @@ class IngestState:
                 cid = conversation_key(platform, c)
                 if not cid:
                     continue
-                p = d / f"{_safe_name(cid)}.json"
-                private_write_text(p, json.dumps(c, ensure_ascii=False))
+                # Raw page JSON is verbose (ChatGPT: ~0.6 MB per conversation, mostly metadata); gzip keeps
+                # it re-parseable at about 1/6 of the size.
+                p = d / f"{_safe_name(cid)}.json.gz"
+                private_write_bytes(p, gzip.compress(json.dumps(c, ensure_ascii=False).encode("utf-8"), 6))
+                stale = d / f"{_safe_name(cid)}.json"
+                if stale.exists():
+                    stale.unlink()
                 index[cid] = conversation_stamp(platform, c)
                 written.append(p)
             extras = {k: v for k, v in payload.items() if k in ("memories", "custom_instructions", "projects") and v}
@@ -318,6 +324,27 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             return self._send(400, {"error": f"{type(e).__name__}: {e}"})
         return self._send(200, {"ok": True, **result})
+
+
+def compress_inbox() -> tuple:
+    """gzip any plain `<id>.json` conversation files in the inbox (older versions wrote them uncompressed).
+
+    Returns (files, bytes_before, bytes_after)."""
+    n = before = after = 0
+    root = inbox_dir()
+    if not root.is_dir():
+        return 0, 0, 0
+    for p in root.glob("*/*.json"):
+        if p.name.startswith("_"):
+            continue
+        raw = p.read_bytes()
+        gz = p.with_name(p.name + ".gz")
+        private_write_bytes(gz, gzip.compress(raw, 6))
+        before += len(raw)
+        after += gz.stat().st_size
+        p.unlink()
+        n += 1
+    return n, before, after
 
 
 def make_server(port: int = 8765, db_path: Optional[Path] = None, quiet: bool = False) -> ThreadingHTTPServer:

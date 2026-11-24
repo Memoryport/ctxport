@@ -136,12 +136,17 @@ def ensure_private_dir(path: Path) -> Path:
 
 def private_write_text(path: Path, text: str) -> None:
     """Atomically write `text` to `path` with 0600 permissions (temp file in the same dir + os.replace)."""
+    private_write_bytes(path, text.encode("utf-8"))
+
+
+def private_write_bytes(path: Path, data: bytes) -> None:
+    """Atomically write `data` to `path` with 0600 permissions (temp file in the same dir + os.replace)."""
     path = Path(path)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.{time.monotonic_ns()}.tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(text)
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
         os.replace(tmp, path)
     except BaseException:
         try:

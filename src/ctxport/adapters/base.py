@@ -29,7 +29,14 @@ def inbox_units(root: Path) -> list:
     root = Path(root)
     if root.is_file():
         return [root]
-    return sorted(p for p in root.glob("*.json") if p.name != "_index.json")
+    files = {}
+    for p in list(root.glob("*.json")) + list(root.glob("*.json.gz")):
+        if p.name in ("_index.json", "_index.json.gz"):
+            continue
+        stem = p.name[:-3] if p.name.endswith(".gz") else p.name
+        if stem not in files or p.name.endswith(".gz"):  # prefer the compressed copy
+            files[stem] = p
+    return sorted(files.values())
 
 
 _ACCOUNT_FILE = re.compile(r"^_account(\.[A-Za-z0-9._-]+)?\.json$")

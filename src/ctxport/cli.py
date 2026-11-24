@@ -479,6 +479,11 @@ def cmd_compact(args) -> int:
     b, a = sum(before["files"].values()), sum(after["files"].values())
     print(f"{_fmt_bytes(b)} → {_fmt_bytes(a)} (saved {_fmt_bytes(max(0, b - a))}); "
           f"{trimmed} tool outputs trimmed to their first and last {TOOL_KEEP // 1024} KB")
+    from .ingest import compress_inbox
+    n, ib, ia = compress_inbox()
+    if n:
+        print(f"browser-extension inbox: {n} conversation files gzip-compressed, "
+              f"{_fmt_bytes(ib)} → {_fmt_bytes(ia)}")
     return 0
 
 

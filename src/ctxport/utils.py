@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import gzip
 import html
 import json
 import os
@@ -238,8 +239,12 @@ class Bundle:
         if self._zip:
             return self._zip.read(name)
         if self.path.is_dir():
-            return (self.path / name).read_bytes()
-        return self.path.read_bytes()
+            data = (self.path / name).read_bytes()
+        else:
+            data = self.path.read_bytes()
+        if name.endswith(".gz") and data[:2] == b"\x1f\x8b":
+            data = gzip.decompress(data)
+        return data
 
     def read_json(self, name: str) -> Any:
         return load_json_lenient(self.read(name))
@@ -434,3 +439,17 @@ def chunks(items: Iterable[str], size: int) -> Iterator[str]:
         buf = f"{buf}\n\n{it}" if buf else it
     if buf:
         yield buf
+
+
+def is_json_name(name: str) -> bool:
+    """`x.json` or a gzip-compressed `x.json.gz` (how the extension inbox stores conversations)."""
+    n = str(name).lower()
+    return n.endswith(".json") or n.endswith(".json.gz")
+
+
+def read_json_file(path: Path) -> Any:
+    """Read a .json or .json.gz file."""
+    data = Path(path).read_bytes()
+    if data[:2] == b"\x1f\x8b":
+        data = gzip.decompress(data)
+    return load_json_lenient(data)

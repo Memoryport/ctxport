@@ -13,3 +13,4 @@ ctxport-out/
 ctxport-memories.md
 *.ctxport.bak
 .pytest_cache/
+.DS_Store
