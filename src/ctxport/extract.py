@@ -22,10 +22,10 @@ _CODE_HINT = re.compile(r"(```|^\s*[$>#] |\b(def|class|function|import|return|co
 
 ZH_RULES = [
     (re.compile(r"^(我是|我叫|叫我)"), "identity"),
-    (re.compile(r"^我(目前|现在)?在.{1,30}(工作|上学|读书|就读|实习|上班)"), "work"),
+    (re.compile(r"^我(目前|现在)?在.{1,30}(工作|上学|读书|就读|实习|上班|读研|读博|读本科|念书|任职)"), "work"),
     (re.compile(r"^我(比较|更|一般|通常|不|很|非常|最)?(喜欢|偏好|习惯|讨厌|不喜欢)"), "preference"),
     (re.compile(r"^我(主要|平时|一般|通常)?(用|使用)"), "tooling"),
-    (re.compile(r"^(以后|今后|之后)(请|都|要)"), "preference"),
+    (re.compile(r"^(以后|今后|之后|从现在开始|从今以后).{0,12}(请|都|要|别|不要|一律|统一)"), "preference"),
     (re.compile(r"^请记住"), "general"),
     (re.compile(r"^我的.{1,12}是"), "identity"),
     # broader self-descriptions (C2)
@@ -33,7 +33,8 @@ ZH_RULES = [
     (re.compile(r"^我(是|在)做.{1,20}的"), "work"),
     (re.compile(r"^我(之前|以前)?(学|读)的是"), "work"),
     (re.compile(r"^我(的)?(技术栈|工作|专业|研究方向|主业)是"), "work"),
-    (re.compile(r"^我(正在|在)(做|开发|写|研究|准备|搭建)"), "project"),
+    (re.compile(r"^我(最近|目前|现在)?(正在|在)(用|使用)"), "tooling"),
+    (re.compile(r"^我(最近|目前|现在)?(正在|在)(做|开发|写|研究|准备|搭建|学)"), "project"),
     (re.compile(r"^我们?(团队|公司|组)(主要|一般|平时)?(用|使用)"), "tooling"),
     (re.compile(r"^我(平时|一般|主要|经常|日常)(写|用|使用|在用)"), "tooling"),
     (re.compile(r"^我(对|在).{1,15}(是新手|不太熟|比较熟|很熟)"), "identity"),
@@ -56,6 +57,28 @@ EN_RULES = [
     (re.compile(r"^(my|our) (tech )?(stack|setup) (is|includes|uses) ", re.I), "tooling"),
     (re.compile(r"^we (mainly |mostly |usually )?use ", re.I), "tooling"),
 ]
+# Sentences that look like a self-description but are about the conversation, the message or the answer:
+# "我是说…", "我是想问…", "我的问题是…", "我喜欢这个答案", "I like it", "I'm a bit confused", "I never got that error".
+_NOT_A_FACT = re.compile(
+    r"^(我是(说|想|觉得|不是|在问|问|指|要问|看|打算|认为)|我的(问题|代码|报错|错误|意思|需求|想法|疑问|情况)是"
+    r"|我(很|非常|比较|最|也|还是)?(喜欢|不喜欢|讨厌|爱)(这|那|你|上面|刚才|它|第.个|这个|那个)"
+    r"|i (really )?(like|love|hate|prefer) (it|this|that|these|those|you|your|the (answer|code|reply|response|idea)|"
+    r"the (first|second|third|last|other) )"
+    r"|i'?m? ?(am )?(a bit|a little|a lot|so|really|kind of|sort of|quite) "
+    r"|i'?m (a bit|a little|kind of|sort of|so|really|quite) "
+    r"|i (always|never|usually) (forget|got|get|had|see|saw|did|thought|knew|seem|run into|hit)\b)", re.I)
+# Health details are never kept as memories.
+_HEALTH = re.compile(r"(过敏|糖尿病|高血压|抑郁|焦虑症|癌症|怀孕|哮喘|艾滋|HIV|allerg|diabet|depress|cancer|pregnan|"
+                     r"diagnos|asthma|adhd|autis|自闭)", re.I)
+# The part of a sentence that asks for something is not about you: "我主要用 Neovim，帮我写个 Makefile".
+_REQUEST_CLAUSE = re.compile(r"[，,]\s*(帮我|请帮|帮忙|麻烦|能不能|能否|可以帮|可不可以|怎么|如何|为什么|请问|"
+                             r"please|can you|could you|help me|how (do|can|to)|why)", re.I)
+
+
+def _keep(sentence: str) -> bool:
+    return not (_NOT_A_FACT.search(sentence) or _HEALTH.search(sentence))
+
+
 # A question can still open with a self-description: "我是前端开发，怎么学 Rust？" → "我是前端开发".
 _CLAUSE = re.compile(r"[，,:：]")
 _LEAD_CATEGORIES = ("identity", "work", "project", "tooling")
@@ -85,17 +108,24 @@ def _rule_candidates(text: str) -> list:
             continue
         if _CODE_HINT.search(s):
             continue
+        if not _keep(s):
+            continue
         if _QUESTION_END.search(s):
-            lead = _CLAUSE.split(s, 1)[0].strip()
+            parts = _CLAUSE.split(s, 1)
+            lead = parts[0].strip()
             if lead != s and 6 <= len(lead) <= 80:
+                with_comma = lead + s[len(parts[0])]  # "作为一个产品经理，" needs its comma to be recognised
                 for rx, cat in ZH_RULES + EN_RULES:
-                    if cat in _LEAD_CATEGORIES and rx.search(lead):
-                        found.append((lead, cat))
+                    if cat in _LEAD_CATEGORIES and (rx.search(lead) or rx.search(with_comma)):
+                        found.append((_as_statement(with_comma) if rx.search(with_comma) and not rx.search(lead)
+                                      else lead, cat))
                         break
             continue
         for rx, cat in ZH_RULES + EN_RULES:
             if rx.search(s):
-                found.append((_as_statement(s.rstrip("。.;；")), cat))
+                m = _REQUEST_CLAUSE.search(s)
+                fact = s[:m.start()] if m else s
+                found.append((_as_statement(fact.rstrip("。.;；，, ")), cat))
                 break
     return found
 
@@ -116,14 +146,21 @@ def _as_statement(s: str) -> str:
 
 
 def user_texts(conv: Conversation) -> list:
-    """Your own messages from the main line and from branches (edits and regenerations), main line first."""
-    out = [m.text for m in conv.messages if m.role == "user" and m.kind == "message" and (m.text or "").strip()]
+    """Your own messages from the main line, then from branches. A branch message that you replaced by editing it
+    (it has the same parent as a main-line message of yours) is left out: the edit is what you meant, so
+    "我在字节跳动工作" edited to "我在腾讯工作" yields only the second."""
+    main = [m for m in conv.messages if m.role == "user" and m.kind == "message" and (m.text or "").strip()]
+    out = [m.text for m in main]
+    replaced = {m.parent_id for m in main if m.parent_id}
     seen = set(out)
     for branch in conv.branches:
         for m in branch:
-            if m.role == "user" and m.kind == "message" and (m.text or "").strip() and m.text not in seen:
-                seen.add(m.text)
-                out.append(m.text)
+            if m.role != "user" or m.kind != "message" or not (m.text or "").strip() or m.text in seen:
+                continue
+            if m.parent_id and m.parent_id in replaced:
+                continue
+            seen.add(m.text)
+            out.append(m.text)
     return out
 
 

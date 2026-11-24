@@ -203,7 +203,9 @@ class Store:
         self.store_raw = store_raw if store_raw is not None else os.environ.get("CTXPORT_STORE_RAW") == "1"
         self.keep_full_tools = os.environ.get("CTXPORT_KEEP_FULL_TOOLS") == "1"
         self._rebuild_fts = False
-        self.db = sqlite3.connect(str(self.path))
+        # Several processes share the store (the extension receiver, `sync`, the MCP server): wait for a writer
+        # instead of failing after Python's default 5 seconds.
+        self.db = sqlite3.connect(str(self.path), timeout=60)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA foreign_keys=ON")
@@ -383,14 +385,17 @@ class Store:
                 yield c
 
     # ------------------------------------------------------------ search
-    def search(self, query: str, platform: Optional[str] = None, limit: int = 20,
+    def search(self, query, platform: Optional[str] = None, limit: int = 20,
                include_tools: bool = False, include_reasoning: bool = False) -> list:
+        """Messages containing every term. `query` is a string (split on spaces) or a list of terms, where each
+        term is matched as a whole phrase: ["I work as"] finds that phrase, not "I", "work" and "as" anywhere."""
         kinds = ["message", "artifact"]
         if include_tools:
             kinds += ["tool_call", "tool_result", "attachment"]
         if include_reasoning:
             kinds.append("reasoning")
-        terms = [t for t in query.split() if t]
+        raw = query if isinstance(query, (list, tuple)) else str(query or "").split()
+        terms = [" ".join(t.split()) for t in raw if t and t.strip()]
         if not terms:
             return []
         kind_sql = f"m.kind IN ({','.join('?' * len(kinds))})"

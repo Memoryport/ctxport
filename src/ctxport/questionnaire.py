@@ -111,7 +111,7 @@ def answers(store, include_candidates: bool = True) -> dict:
     """{question id: [memory texts]} for every question your memories answer.
 
     A memory answers a question when it was saved for it (from `ctxport ask` or `extract --questions`), or when it
-    is in the question's category and mentions one of its keywords. The second rule is a heuristic, so the report
+    mentions one of its keywords, in any category. The second rule is a heuristic, so the report
     calls those questions "likely answered"."""
     status = ("accepted", "candidate") if include_candidates else ("accepted",)
     mems = store.memories(status=status)
@@ -120,8 +120,9 @@ def answers(store, include_candidates: bool = True) -> dict:
         hits = [m.text for m in mems if m.question == q.id]
         if not hits:
             kws = [k.lower() for k in q.keywords]
-            hits = [m.text for m in mems if m.category == q.category and m.question is None
-                    and any(k in m.text.lower() for k in kws)]
+            # any category: "我是后端工程师" (identity) answers the role question (work), and a custom instruction
+            # "回答请用中文" answers the language question
+            hits = [m.text for m in mems if m.question is None and any(k in m.text.lower() for k in kws)]
         if hits:
             out[q.id] = hits
     return out
@@ -171,7 +172,7 @@ def excerpts(store, q: Question, limit: int = 20, width: int = 400) -> list:
     from .redact import redact
     seen, out = set(), []
     for kw in q.keywords:
-        for r in store.search(kw, limit=limit * 3):
+        for r in store.search([kw], limit=limit * 3):  # the keyword is one phrase
             if r["role"] != "user" or r["id"] in seen:
                 continue
             seen.add(r["id"])

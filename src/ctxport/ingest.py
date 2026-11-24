@@ -179,12 +179,13 @@ class IngestState:
 
     def save(self, platform: str, payload: dict) -> dict:
         from .pipeline import SyncReport, import_unit
+        from .utils import signature
         from .adapters import get_importer
         if platform not in PLATFORMS:
             raise ValueError(f"unknown platform {platform!r}")
         d = ensure_private_dir(inbox_dir(platform))
         convs = payload.get("conversations") or []
-        written = []
+        written = []      # (path, conversation id or None for the account file)
         with _LOCK:
             index = self.known(platform)
             for c in convs:
@@ -200,8 +201,7 @@ class IngestState:
                 stale = d / f"{_safe_name(cid)}.json"
                 if stale.exists():
                     stale.unlink()
-                index[cid] = conversation_stamp(platform, c)
-                written.append(p)
+                written.append((p, cid, conversation_stamp(platform, c)))
             extras = {k: v for k, v in payload.items() if k in ("memories", "custom_instructions", "projects") and v}
             if extras:
                 # One file per account, so a second Claude.ai organisation doesn't overwrite the first one's
@@ -216,13 +216,19 @@ class IngestState:
                         old = {}
                 old.update(extras)
                 private_write_text(p, json.dumps(old, ensure_ascii=False))
-                written.append(p)
-            private_write_text(d / "_index.json", json.dumps(index, ensure_ascii=False))
+                written.append((p, None, None))
             imp = get_importer(platform)
             rep = SyncReport(platform)
-            with Store(self.db_path) as store:
-                for p in written:
-                    import_unit(store, imp, p, False, rep)
+            try:
+                with Store(self.db_path) as store:
+                    for p, cid, stamp in written:
+                        import_unit(store, imp, p, False, rep)
+                        # Only what is really in the store counts as known, so the extension sends a
+                        # conversation again when its import failed (bad data, or the database was busy).
+                        if cid is not None and store.source_signature(imp.unit_key(p)) == signature(p):
+                            index[cid] = stamp
+            finally:
+                private_write_text(d / "_index.json", json.dumps(index, ensure_ascii=False))
         return {"saved": len(written), "conversations": rep.conversations, "messages": rep.messages,
                 "memories_new": rep.memories_new, "warnings": rep.warnings[:20]}
 

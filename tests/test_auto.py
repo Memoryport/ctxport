@@ -349,3 +349,15 @@ def test_inbox_gzip_and_legacy_plain_files(tmp_path):
     assert r.units == 1 and r.conversations == 1
     s.close()
     assert ingest.compress_inbox()[0] == 1
+
+
+def test_ingest_marks_only_imported_conversations_as_known(tmp_path, server):
+    port = server
+    token = _pair(port)
+    bad = {"uuid": "bad-1", "chat_messages": "not a list", "updated_at": "x"}
+    good = {"uuid": "ok-1", "name": "t", "updated_at": "2026-01-01T00:00:00Z",
+            "chat_messages": [{"uuid": "m1", "sender": "human", "content": [{"type": "text", "text": "hi"}]}]}
+    code, r = _post(port, "/ingest", {"platform": "claude-ai", "conversations": [bad, good]}, token=token)
+    assert code == 200 and r["conversations"] == 1
+    known = _post(port, "/known?platform=claude-ai", token=token)[1]["known"]
+    assert known == {"ok-1": "2026-01-01T00:00:00Z"}  # bad-1 is sent again next time
