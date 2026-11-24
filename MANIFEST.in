@@ -1,0 +1,8 @@
+# Keep the source distribution small: only what is needed to build and install ctxport.
+# Tests, the browser extension, docs and CI config live in the git repository and the GitHub release.
+prune tests
+prune extension
+prune docs
+prune scripts
+prune .github
+global-exclude *.py[cod] __pycache__ *.db *.zip
