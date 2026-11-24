@@ -63,7 +63,7 @@ def bench_search(tmp: Path) -> dict:
             t, rows = timed(s.search, q, limit=20)
             times.append(t)
         out[q] = {"median_ms": round(statistics.median(times) * 1000, 2), "hits": len(rows),
-                  "ids": sorted(r["id"] for r in rows)[:5]}
+                  "ids": sorted(f"{r['conversation_id']}:{r['branch']}:{r['idx']}" for r in rows)}
     s.close()
     return out
 

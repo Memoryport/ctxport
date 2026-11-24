@@ -161,3 +161,14 @@ def test_resync_unchanged_keeps_rows_and_extraction_state(tmp_path):
     assert s.db.execute("SELECT id FROM messages ORDER BY id").fetchall() == ids
     assert s.is_extracted("chatgpt:inc", "rules")
     s.close()
+
+
+def test_short_terms_combine_with_the_index(tmp_path):
+    s = Store(tmp_path / "a.db")
+    s.upsert_conversation(_chat(["前端性能优化怎么做", "后端性能优化看数据库", "前端打包太大", "性能优化"]))
+    s.commit()
+    got = {r["text"] for r in s.search("前端 性能优化")}
+    assert got == {"前端性能优化怎么做"}
+    assert {r["text"] for r in s.search("前端")} == {"前端性能优化怎么做", "前端打包太大"}
+    assert {r["text"] for r in s.search(["性能优化", "库"])} == {"后端性能优化看数据库"}
+    s.close()

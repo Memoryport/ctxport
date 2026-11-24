@@ -12,6 +12,14 @@ All notable changes to ctxport are listed here. The format follows
   full-text index entries. On 600 synthetic conversations (33,760 messages) a re-sync with one new exchange each
   took 0.74 s instead of 11.7 s, an unchanged re-sync 0.42 s instead of 11.1 s, and the database stayed 96 MB
   instead of growing to 218 MB. `benchmarks/bench.py` reproduces the numbers.
+- The near-duplicate check compares a new memory only with memories whose length can reach the 80% threshold
+  (database version 5 stores each memory's bigram count) and caches bigram sets: adding 6,000 candidates took
+  2.6 s instead of 14.6 s and `memories dedupe` 0.54 s instead of 6.6 s, with the same merges.
+- Search terms shorter than 3 characters ("前端", "索引") no longer turn the whole query into a full scan: the longer
+  terms use the full-text index and the short ones filter its hits ("前端 性能优化": 27 ms instead of 70 ms, same
+  results).
+- The database uses `synchronous=NORMAL` with its write-ahead log: commits no longer wait for the disk, which made a
+  fresh import about 10% faster. A power cut can lose the last commits but cannot corrupt the database.
 
 ### Fixed
 - E-mail addresses, WeChat / QQ ids and licence plates are no longer turned into memories (they were exported to

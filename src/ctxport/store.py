@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Iterable, Optional
 
-from .models import similarity, Conversation, MemoryItem, Message
+from .models import Conversation, MemoryItem, Message, dice, dice_size_bounds, similarity_grams
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sources(
@@ -29,7 +29,7 @@ CREATE INDEX IF NOT EXISTS msg_conv ON messages(conversation_id, branch, idx);
 CREATE TABLE IF NOT EXISTS memories(
   id TEXT PRIMARY KEY, text TEXT NOT NULL, platform TEXT, category TEXT, source_ref TEXT,
   confidence REAL, status TEXT, scope TEXT, created_at REAL, updated_at REAL,
-  seen_count INTEGER DEFAULT 1, first_seen REAL, last_seen REAL, sources TEXT, question TEXT);
+  seen_count INTEGER DEFAULT 1, first_seen REAL, last_seen REAL, sources TEXT, question TEXT, sim_n INTEGER);
 CREATE TABLE IF NOT EXISTS extracted(
   conversation_id TEXT, method TEXT, extracted_at REAL, PRIMARY KEY(conversation_id, method));
 """
@@ -67,7 +67,7 @@ def trim_tool_text(text: str, keep: int = TOOL_KEEP) -> str:
 #   2. add MIGRATIONS[new_version] = SQL that upgrades a database of the previous version (ALTER TABLE ...),
 #   3. update SCHEMA so brand-new databases are created in the new layout directly.
 # Migrations run in order, each in its own transaction, the next time the store is opened.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 MIGRATIONS: dict = {
     # 2: the full-text index covers dialogue only (FTS_KINDS); the triggers are recreated by FTS_SCHEMA and the
     #    index is rebuilt once after the migration.
@@ -89,7 +89,17 @@ UPDATE memories SET sources = json_array(source_ref) WHERE source_ref IS NOT NUL
     # 4: earlier versions imported ids, timestamps and bold sub-headings of ChatGPT / Claude memory files as
     #    accepted memories ("8f2b1c3d-…", "2025-01-02T00:00:00Z", "**Work context**"); delete them.
     4: lambda db: _drop_metadata_memories(db),
+    # 5: memories store the size of their bigram set (models.similarity_grams), so the near-duplicate check only
+    #    compares memories whose size can reach NEAR_DUPLICATE instead of every memory of the category.
+    5: lambda db: _add_sim_n(db),
 }
+
+
+def _add_sim_n(db) -> None:
+    if "sim_n" not in {r[1] for r in db.execute("PRAGMA table_info(memories)")}:
+        db.execute("ALTER TABLE memories ADD COLUMN sim_n INTEGER")
+    rows = db.execute("SELECT id, text FROM memories").fetchall()
+    db.executemany("UPDATE memories SET sim_n=? WHERE id=?", [(len(similarity_grams(r[1] or "")), r[0]) for r in rows])
 
 
 def _drop_metadata_memories(db) -> None:
@@ -212,8 +222,12 @@ class Store:
         self.db = sqlite3.connect(str(self.path), timeout=60)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
+        # In WAL mode NORMAL skips the fsync on every commit (only checkpoints sync). The database stays consistent
+        # after a power cut; at worst the last commits roll back, and an import is re-run by the next sync anyway.
+        self.db.execute("PRAGMA synchronous=NORMAL")
         self.db.execute("PRAGMA foreign_keys=ON")
         self._migrate()
+        self.db.execute("CREATE INDEX IF NOT EXISTS mem_near ON memories(scope, category, sim_n)")
         self.fts = self._init_fts()
         if self.fts and self._rebuild_fts:
             self.rebuild_fts()
@@ -442,17 +456,23 @@ class Store:
         kind_sql = f"m.kind IN ({','.join('?' * len(kinds))})"
         args: list = []
         # the index holds dialogue only; tool output / reasoning searches scan with LIKE
-        use_fts = self.fts and all(len(t) >= 3 for t in terms) and set(kinds) <= set(FTS_KINDS)
+        # The trigram index can only look up terms of 3+ characters. Short terms (common in Chinese: "前端", "索引")
+        # are checked with LIKE on the rows the long terms found, so only an all-short query scans every message.
+        long_terms = [t for t in terms if len(t) >= 3]
+        short_terms = [t for t in terms if len(t) < 3]
+        use_fts = self.fts and bool(long_terms) and set(kinds) <= set(FTS_KINDS)
+        like_terms = short_terms if use_fts else terms
+        like = "".join(" AND m.text LIKE ? ESCAPE '\\'" for _ in like_terms)
+        like_args = ["%" + t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" for t in like_terms]
         if use_fts:
-            fts_q = " AND ".join('"' + t.replace('"', '""') + '"' for t in terms)
+            fts_q = " AND ".join('"' + t.replace('"', '""') + '"' for t in long_terms)
             sql = ("SELECT m.*, c.title, c.platform, c.updated_at AS conv_updated_at FROM messages_fts f JOIN messages m ON m.id=f.rowid "
-                   "JOIN conversations c ON c.id=m.conversation_id WHERE messages_fts MATCH ? AND " + kind_sql)
-            args = [fts_q] + kinds
+                   "JOIN conversations c ON c.id=m.conversation_id WHERE messages_fts MATCH ?" + like + " AND " + kind_sql)
+            args = [fts_q] + like_args + kinds
         else:
-            like = " AND ".join("m.text LIKE ? ESCAPE '\\'" for _ in terms)
             sql = ("SELECT m.*, c.title, c.platform, c.updated_at AS conv_updated_at FROM messages m JOIN conversations c ON c.id=m.conversation_id "
-                   f"WHERE {like} AND " + kind_sql)
-            args = ["%" + t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" for t in terms] + kinds
+                   "WHERE 1=1" + like + " AND " + kind_sql)
+            args = like_args + kinds
         if platform:
             sql += " AND c.platform=?"
             args.append(platform)
@@ -496,11 +516,17 @@ class Store:
         return new_ref
 
     def find_near_duplicate(self, mem: MemoryItem):
-        """The most similar other memory of the same scope and category, if it is at least NEAR_DUPLICATE alike."""
+        """The most similar other memory of the same scope and category, if it is at least NEAR_DUPLICATE alike.
+        Only memories whose bigram count can reach the threshold are read (size filter, see dice_size_bounds)."""
+        grams = similarity_grams(mem.text)
+        if not grams:
+            return None
+        lo, hi = dice_size_bounds(len(grams), NEAR_DUPLICATE)
         best, best_sim = None, NEAR_DUPLICATE
-        for r in self.db.execute("SELECT * FROM memories WHERE scope=? AND category=? AND id!=?",
-                                 (mem.scope, mem.category, mem.id)):
-            sim = similarity(mem.text, r["text"])
+        for r in self.db.execute("SELECT * FROM memories WHERE scope=? AND category=? AND id!=?"
+                                 " AND (sim_n BETWEEN ? AND ? OR sim_n IS NULL)",
+                                 (mem.scope, mem.category, mem.id, lo - 1e-9, hi + 1e-9)):
+            sim = dice(grams, similarity_grams(r["text"]))
             if sim >= best_sim:
                 best, best_sim = r, sim
         return best
@@ -526,10 +552,10 @@ class Store:
             sources = [mem.source_ref] if mem.source_ref else []
             self.db.execute(
                 "INSERT INTO memories(id,text,platform,category,source_ref,confidence,status,scope,created_at,"
-                "updated_at,seen_count,first_seen,last_seen,sources,question) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "updated_at,seen_count,first_seen,last_seen,sources,question,sim_n) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (mem.id, mem.text, mem.platform, mem.category, mem.source_ref, mem.confidence, mem.status, mem.scope,
                  mem.created_at, now, max(1, mem.seen_count or 1), mem.first_seen or seen_at, seen_at,
-                 _j(sources) if sources else None, mem.question))
+                 _j(sources) if sources else None, mem.question, len(similarity_grams(mem.text))))
             return "new"
         if r["status"] == "rejected":
             return "kept"
@@ -581,11 +607,22 @@ class Store:
         for rows in groups.values():
             rows.sort(key=lambda r: (r["status"] != "accepted", -(r["confidence"] or 0), -(r["seen_count"] or 1),
                                      len(r["text"])))
-            keepers: list = []
+            # keepers bucketed by bigram count, so each memory is compared only with keepers of a size that can
+            # reach the threshold; among matches the earliest keeper wins, as in a plain scan of the list
+            buckets: dict = {}
+            order = 0
             for r in rows:
-                k = next((k for k in keepers if similarity(k["text"], r["text"]) >= NEAR_DUPLICATE), None)
+                g = similarity_grams(r["text"])
+                k = None
+                if g:
+                    lo, hi = dice_size_bounds(len(g), NEAR_DUPLICATE)
+                    hits = [(i, kr) for n in range(int(lo), int(hi) + 1) if lo - 1e-9 <= n <= hi + 1e-9
+                            for i, kg, kr in buckets.get(n, ()) if dice(g, kg) >= NEAR_DUPLICATE]
+                    if hits:
+                        k = min(hits, key=lambda h: h[0])[1]
                 if k is None:
-                    keepers.append(r)
+                    buckets.setdefault(len(g), []).append((order, g, r))
+                    order += 1
                     continue
                 k = self.db.execute("SELECT * FROM memories WHERE id=?", (k["id"],)).fetchone()
                 sources = self._sources(k)
