@@ -294,6 +294,15 @@ class Store:
         )
         self.db.commit()
 
+    def move_source(self, old_key: str, new_key: str, path: str, sig: str) -> bool:
+        """Point an imported file's bookkeeping at the file that replaced it with the same content (a plain inbox
+        file gzip-compressed by `compact`), so the next sync doesn't read it again. Rows of failed imports stay."""
+        cur = self.db.execute("UPDATE OR REPLACE sources SET key=?, path=?, signature=? WHERE key=? "
+                              "AND signature NOT LIKE 'error:%'", (new_key, path, sig, old_key))
+        self.db.execute("UPDATE conversations SET source_key=?, source_path=? WHERE source_key=?", (new_key, path, old_key))
+        self.db.commit()
+        return cur.rowcount > 0
+
     def forget_source(self, key: str) -> None:
         self.db.execute("DELETE FROM sources WHERE key=?", (key,))
         self.db.commit()

@@ -7,6 +7,14 @@ All notable changes to ctxport are listed here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- E-mail addresses, WeChat / QQ ids and licence plates are no longer turned into memories (they were exported to
+  every assistant and shown by `profile`). Conversation archives keep them, as before.
+- Masking also covers `密码 hunter22` (a space alone before the value), passport numbers after "护照号" / "passport no.",
+  and Chinese street addresses down to the house number ("中关村大街27号").
+- Exported files and `handoff --out` are written with 0600 permissions.
+- Claude memory: short italic sub-headings ("*Earlier context*") are no longer glued to the next memory.
+- `compact` keeps the import records of the inbox files it gzip-compresses, so the next sync no longer reads them all
+  again and reports them as imported. A warning no longer repeats the file name.
 - Extension: one conversation that keeps failing to download no longer aborts the whole ChatGPT / Claude sync. It is
   skipped, counted in the popup and fetched again next sync; the rest, memories and custom instructions are still
   sent. Signing out or the local ctxport server refusing data stops every parallel download at once.

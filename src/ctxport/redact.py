@@ -56,6 +56,14 @@ _EN_IS = re.compile(
     r"\s*(?:\s(?:is|was)\s|=|：|:|是|为|\s)\s*)([\"']?)((?!\[REDACTED\])(?=[^\s\"',;]*[0-9!@#$%^&*_\-])[^\s\"',;]{4,})\2"
 )
 _ZH_ASSIGN = re.compile(r"(密码|口令|令牌|密钥|秘钥)(\s*[:：是为]\s*)(\S{4,})")
+# "密码 hunter22": a space alone separates the value, so it must look like one (a Latin letter, digit or symbol)
+_ZH_SPACE = re.compile(r"(密码|口令|令牌|密钥|秘钥)(\s+)((?!\[REDACTED\])(?=\S*[A-Za-z0-9!@#$%^&*_\-])[^\s，。,;；]{4,})")
+# "护照号是 E12345678" / "passport no. E12345678": only after the word, as the bare number looks like many codes
+_PASSPORT = re.compile(r"(?i)((?:护照|passport)(?:号码|号|\s*(?:no\.?|number|#))?\s*(?:[:：是为]|\s(?:is|was)\s)?\s*)"
+                       r"([A-Z]{1,2}\d{7,8})(?![A-Za-z0-9])")
+# a street address down to the house number: "中关村大街27号", "长安路 1-3 号 5 栋 201 室"
+_ZH_ADDRESS = re.compile(r"[^\s\d\x00-\x2f\x3a-\x40在于住到是的我你他她，。、,：:；（(]{1,16}?(?:路|街|大道|巷|弄|胡同)"
+                         r"\s*\d+(?:-\d+)?\s*号(?:\s*\d+\s*(?:栋|幢|号楼|单元|楼|层|室))*")
 
 
 def _mask_assign(m: re.Match) -> str:
@@ -73,6 +81,9 @@ def redact(text: str) -> str:
     out = _ASSIGN.sub(_mask_assign, out)
     out = _EN_IS.sub(_mask_assign, out)
     out = _ZH_ASSIGN.sub(lambda m: f"{m.group(1)}{m.group(2)}{MASK}", out)
+    out = _ZH_SPACE.sub(lambda m: f"{m.group(1)}{m.group(2)}{MASK}", out)
+    out = _PASSPORT.sub(lambda m: f"{m.group(1)}{MASK}", out)
+    out = _ZH_ADDRESS.sub(MASK, out)
     return _mask_pii(out)
 
 
@@ -117,11 +128,23 @@ _SENSITIVE_WORDS = re.compile(
     r"\bssn\b|social security|passport|credit card|\biban\b)")
 
 
+# Contact handles and other identifiers that are fine in a transcript but must not become a memory that is pasted
+# into every assistant: e-mail addresses, WeChat / QQ ids, licence plates.
+_EMAIL = re.compile(r"(?<![\w.+-])(?!git@)[\w.+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(?![\w-])")
+_CN_PLATE = re.compile(r"[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼使领][A-HJ-NP-Z]\s?[A-HJ-NP-Z0-9]{5,6}"
+                       r"(?![A-Za-z0-9])")
+_IDENTIFIER_WORDS = re.compile(
+    r"(?i)(微信号|微信id|\bwxid_|qq号|qq 号|车牌|手机号|电话号码|家庭住址|家庭地址|门牌号|\be-?mail address\b|"
+    r"\bphone number\b|\blicen[cs]e plate\b|\bhome address\b)")
+
+
 def is_sensitive(text: str) -> bool:
-    """True when `text` holds a secret, a personal identifier (both masked by redact), or a credential-like word.
-    Used to keep such sentences out of memories (extraction, questionnaire answers, imported lists)."""
+    """True when `text` holds a secret, a personal identifier (both masked by redact), a contact handle or plate,
+    or a credential-like word. Used to keep such sentences out of memories (extraction, questionnaire answers,
+    imported lists)."""
     if not text:
         return False
     if redact(text) != text:
         return True
-    return bool(_SENSITIVE_WORDS.search(text))
+    return bool(_SENSITIVE_WORDS.search(text) or _EMAIL.search(text) or _CN_PLATE.search(text)
+                or _IDENTIFIER_WORDS.search(text))

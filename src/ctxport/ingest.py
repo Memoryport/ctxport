@@ -332,10 +332,13 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(200, {"ok": True, **result})
 
 
-def compress_inbox() -> tuple:
+def compress_inbox(store: Optional[Store] = None) -> tuple:
     """gzip any plain `<id>.json` conversation files in the inbox (older versions wrote them uncompressed).
 
-    Returns (files, bytes_before, bytes_after)."""
+    With `store`, a file that was already imported unchanged keeps its import record under the new name, so the
+    next sync doesn't read every compressed file again. Returns (files, bytes_before, bytes_after)."""
+    from .adapters import get_importer
+    from .utils import signature
     n = before = after = 0
     root = inbox_dir()
     if not root.is_dir():
@@ -343,11 +346,20 @@ def compress_inbox() -> tuple:
     for p in root.glob("*/*.json"):
         if p.name.startswith("_"):
             continue
+        imp = None
+        if store is not None:
+            try:
+                imp = get_importer(p.parent.name)
+            except Exception:
+                imp = None
+        unchanged = imp is not None and store.source_signature(imp.unit_key(p)) == signature(p)
         raw = p.read_bytes()
         gz = p.with_name(p.name + ".gz")
         private_write_bytes(gz, gzip.compress(raw, 6))
         before += len(raw)
         after += gz.stat().st_size
+        if unchanged:
+            store.move_source(imp.unit_key(p), imp.unit_key(gz), str(gz), signature(gz))
         p.unlink()
         n += 1
     return n, before, after
