@@ -7,6 +7,13 @@ All notable changes to ctxport are listed here. The format follows
 ## [Unreleased]
 
 ### Added
+- 30-question background questionnaire in three stages (`src/ctxport/questionnaire.py`):
+  `ctxport memories coverage` shows which questions are answered; `ctxport extract --questions` asks the LLM only
+  the unanswered ones, over excerpts of your own messages found by search, and keeps only cited answers;
+  `ctxport ask` (and `profile --ask`) asks you up to 5 of the rest; `ctxport prompt` prints a prompt for the
+  assistant you're leaving and `ctxport memories import` reads its answer back as candidates.
+- Broader extraction rules ("As a …,", "我平时写 …", "Our stack is …", self-descriptions that open a question),
+  branches are read, and LLM extraction includes assistant statements you explicitly confirmed.
 - Memory quality (database version 3): extracted facts that nearly duplicate an existing memory (same category,
   ~80% alike after folding width, case, spacing and the subject) are merged into it; each memory counts the
   conversations that mention it and records when it was first and last seen; memories rank by accepted, then

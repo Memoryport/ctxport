@@ -114,6 +114,20 @@ ctxport profile --max-chars 1500 --topics 0   # 适合 ChatGPT 自定义指令�
 
 内容分三部分：可选的“简介”段落；按“关于我 / 工作与学习 / 偏好 / 项目 / 工具与环境”分组的记忆；以及“最近在做的事”（最近对话的标题，`--topics 0` 关闭，`--since 90d` 限定时间）。密钥会被打码。如果还没审核过任何记忆，会先用未审核的候选并提示你。粘贴到 ChatGPT → 设置 → 个性化 → 自定义指令、claude.ai/import-memory 或 Claude 项目说明、Gemini → 已保存的信息，或者直接作为新对话的第一条消息。
 
+### 补齐空白：30 题背景问卷
+
+提取只能找到你恰好说过的话。ctxport 会用 30 个背景问题（分三步：1 你是谁、2 你在做什么用什么、3 你希望怎样被帮助）检查已有记忆，并按成本从低到高补齐空白：
+
+```bash
+ctxport memories coverage        # 按步骤显示哪些问题已经有答案
+ctxport extract --questions      # 只针对没答案的问题：在你自己的发言里搜索，让本地模型只根据这些片段回答并注明出处；没有出处的丢弃
+ctxport ask                      # 仍然空着？自己回答最多 5 个短问题（直接算已确认）
+ctxport prompt > ask-chatgpt.md  # 或把这段 prompt 粘贴到你要离开的助手里，保存它的回答，然后：
+ctxport memories import answer.md --platform chatgpt
+```
+
+所有来自模型的内容（`--questions`、粘贴 prompt 的回答）都是候选，要在 `ctxport memories edit` 里勾选后才生效。问卷不会问证件号、住址、健康、政治、宗教或财务信息。
+
 ## 常见迁移场景
 
 | 场景 | 命令 |
@@ -140,10 +154,11 @@ ctxport profile --max-chars 1500 --topics 0   # 适合 ChatGPT 自定义指令�
 
 1. **显式记忆**直接 accepted：自定义指令、CLAUDE.md / AGENTS.md / GEMINI.md、平台导出的记忆、Chatbox 记忆。
 2. **规则提取**（离线，默认）：只看用户消息，按句切分，长度 6–200，跳过问句与代码/日志，匹配"我是/我叫/我在…工作/我喜欢/我平时用/以后请/请记住"和 "I am a / my name is / I prefer / I use / from now on" 等，结果为 candidate（置信度 0.4）。
-3. **LLM 提取**（`--llm`，可选）：OpenAI 兼容接口，默认本地 Ollama `http://localhost:11434/v1`、`qwen2.5:7b`（`CTXPORT_LLM_BASE_URL` / `CTXPORT_LLM_MODEL` / `CTXPORT_LLM_API_KEY`）。只发送**用户消息**（先遮蔽密钥），约 6000 字符一块；非 localhost 地址必须加 `--allow-remote`。结果为 candidate（0.8）。注意：`handoff --llm` 生成摘要时会发送对话前半部分的**双方消息**（同样先遮蔽密钥）。
-4. 每个对话每种方法只提取一次，对话更新后自动重新提取。同一个事实再次出现（哪怕换了说法：“我用 VS Code” / “我用VSCode”）会合并进已有的记忆，并记录被多少个对话提到过、最早和最近一次出现的时间。提到越多、越新的排在越前；你拒绝过的内容换个说法也不会再回来；如果出现了更新的相关事实（比如换了编辑器），审核清单会把旧的标成“可能过时”。`ctxport memories dedupe` 可以合并旧数据库里已有的重复项，`ctxport memories coverage` 显示还缺什么。
-5. **审核**：`ctxport memories edit` 生成勾选清单，`[x]` 保留、`[ ]` 拒绝、可直接改写；被拒绝的不会再被导入恢复。也可用 `memories list/add/accept/reject/rm`。
-6. 导出只包含 accepted（`--include-candidates` 可包含候选）；所有导出都经过遮蔽（OpenAI/Anthropic/GitHub/GitLab/Google/AWS/Slack/Stripe/Hugging Face 等密钥、JWT、私钥块、`password|token|api_key = …`（含 JSON、环境变量如 `GITHUB_TOKEN=…`）、`Authorization: Bearer …`、URL 中的 `user:密码@`），`--no-redact` 关闭。
+3. **规则**也能识别不在句首的常见自我描述（“作为一名老师，…”“我平时写 Rust”“Our stack is …”）以及问句开头的自我介绍（“我是前端开发，怎么学 Rust？”→“我是前端开发”）。编辑和重新生成产生的分支也会读取。
+4. **LLM 提取**（`--llm`，可选）：OpenAI 兼容接口，默认本地 Ollama `http://localhost:11434/v1`、`qwen2.5:7b`（`CTXPORT_LLM_BASE_URL` / `CTXPORT_LLM_MODEL` / `CTXPORT_LLM_API_KEY`）。只发送**用户消息**（先遮蔽密钥），约 6000 字符一块；非 localhost 地址必须加 `--allow-remote`。你明确确认过的 AI 总结（“所以你的技术栈是 Go 和 Postgres？”→“对”）也会一并送入，并标明是你确认过的。结果为 candidate（0.8）。注意：`handoff --llm` 生成摘要时会发送对话前半部分的**双方消息**（同样先遮蔽密钥）。
+5. 每个对话每种方法只提取一次，对话更新后自动重新提取。同一个事实再次出现（哪怕换了说法：“我用 VS Code” / “我用VSCode”）会合并进已有的记忆，并记录被多少个对话提到过、最早和最近一次出现的时间。提到越多、越新的排在越前；你拒绝过的内容换个说法也不会再回来；如果出现了更新的相关事实（比如换了编辑器），审核清单会把旧的标成“可能过时”。`ctxport memories dedupe` 可以合并旧数据库里已有的重复项，`ctxport memories coverage` 显示还缺什么。
+6. **审核**：`ctxport memories edit` 生成勾选清单，`[x]` 保留、`[ ]` 拒绝、可直接改写；被拒绝的不会再被导入恢复。也可用 `memories list/add/accept/reject/rm`。
+7. 导出只包含 accepted（`--include-candidates` 可包含候选）；所有导出都经过遮蔽（OpenAI/Anthropic/GitHub/GitLab/Google/AWS/Slack/Stripe/Hugging Face 等密钥、JWT、私钥块、`password|token|api_key = …`（含 JSON、环境变量如 `GITHUB_TOKEN=…`）、`Authorization: Bearer …`、URL 中的 `user:密码@`），`--no-redact` 关闭。
 
 ## MCP
 
