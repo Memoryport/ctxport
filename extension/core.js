@@ -220,5 +220,15 @@
     return [...seen.values()];
   }
 
-  root.CtxportCore = { syncChatGPT, syncClaude, scrapeGeminiConversation, listGeminiConversations, withRetry };
+  // Which Gemini conversations to (re)scrape. The sidebar has no "last updated" stamp, so a chat we already
+  // have can't be told apart from one that got new messages. The sidebar is ordered by recent activity, so
+  // besides everything new we always re-scrape the `recent` most recent chats, where new messages land.
+  const GEMINI_RECENT_REFRESH = 10;
+  function geminiTodo(list, known, full, recent) {
+    const n = recent == null ? GEMINI_RECENT_REFRESH : recent;
+    return list.filter((c, i) => full || !(c.id in (known || {})) || i < n);
+  }
+
+  root.CtxportCore = { syncChatGPT, syncClaude, scrapeGeminiConversation, listGeminiConversations, geminiTodo,
+    GEMINI_RECENT_REFRESH, withRetry };
 })(typeof globalThis !== "undefined" ? globalThis : this);

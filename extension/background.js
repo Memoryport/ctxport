@@ -3,6 +3,8 @@
  */
 "use strict";
 
+importScripts("core.js");  // CtxportCore (shared with the content script)
+
 const SITES = {
   "chatgpt": { url: "https://chatgpt.com/", match: ["https://chatgpt.com/*", "https://chat.openai.com/*"] },
   "claude-ai": { url: "https://claude.ai/", match: ["https://claude.ai/*"] },
@@ -77,8 +79,10 @@ function sendToTab(tabId, msg, tries = 20) {
 // Gemini: scrape each conversation in one reusable background tab.
 async function geminiScrape(list, full) {
   const known = (await server("/known?platform=gemini-web")).known || {};
-  const todo = list.filter((c) => full || !(c.id in known));
-  await log("gemini-web", `${list.length} conversations in sidebar, ${todo.length} to fetch`);
+  const todo = CtxportCore.geminiTodo(list, known, full);
+  const fresh = todo.filter((c) => !(c.id in known)).length;
+  await log("gemini-web", `${list.length} conversations in sidebar, ${fresh} new, ` +
+    `${todo.length - fresh} recent ones re-checked for new messages`);
   if (!todo.length) return { platform: "gemini-web", total: list.length, fetched: 0, imported: 0 };
   const tab = await chrome.tabs.create({ url: "about:blank", active: false });
   let imported = 0, done = 0;

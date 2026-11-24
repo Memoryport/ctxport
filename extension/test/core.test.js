@@ -90,6 +90,18 @@ async function testClaude() {
   assert.strictEqual(io.pushed[io.pushed.length - 1].account, "o1", "account data is tagged with its organisation");
 }
 
+function testGeminiTodo() {
+  const list = Array.from({ length: 15 }, (_, i) => ({ id: "g" + i }));
+  const known = Object.fromEntries(list.map((c) => [c.id, 3]));
+  delete known.g12;  // a new chat further down
+  const ids = (cs) => cs.map((c) => c.id);
+  assert.deepStrictEqual(ids(Core.geminiTodo(list, known, false, 2)), ["g0", "g1", "g12"],
+    "recent chats are re-checked even when known, plus anything new");
+  assert.strictEqual(Core.geminiTodo(list, known, false).length, Core.GEMINI_RECENT_REFRESH + 1);
+  assert.strictEqual(Core.geminiTodo(list, known, true, 2).length, 15, "full sync takes everything");
+  assert.strictEqual(Core.geminiTodo(list, {}, false, 0).length, 15);
+}
+
 function el(tag, text, children, attrs) {
   return {
     tagName: tag.toUpperCase(), innerText: text, textContent: text, children: children || [],
@@ -135,6 +147,7 @@ async function testGemini() {
 (async () => {
   await testChatGPT();
   await testClaude();
+  testGeminiTodo();
   await testGemini();
   console.log("extension core tests passed");
 })().catch((e) => { console.error(e); process.exit(1); });

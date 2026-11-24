@@ -299,3 +299,18 @@ def test_extension_manifest_is_local_only():
     assert hosts == {"https://chatgpt.com/*", "https://chat.openai.com/*", "https://claude.ai/*",
                      "https://gemini.google.com/*", "http://127.0.0.1/*"}
     assert "cookies" not in m["permissions"] and "<all_urls>" not in hosts
+
+
+def test_gemini_rescrape_updates_conversation(tmp_path, paired):
+    """The extension re-sends recent Gemini chats; new messages must replace the stored copy, not duplicate it."""
+    port, token = paired
+    msgs = [{"role": "user", "text": "What is a prime?"}, {"role": "model", "text": "Two divisors."}]
+    conv = {"id": "gem1", "title": "Primes", "messages": msgs}
+    assert _post(port, "/ingest", {"platform": "gemini-web", "conversations": [conv]}, token=token)[0] == 200
+    conv["messages"] = msgs + [{"role": "user", "text": "Example?"}, {"role": "model", "text": "7"}]
+    assert _post(port, "/ingest", {"platform": "gemini-web", "conversations": [conv]}, token=token)[0] == 200
+    s = Store(tmp_path / "ctxport_home" / "ctxport.db")
+    assert [m.text for m in s.get_conversation("gemini-web:gem1").messages][-1] == "7"
+    assert len(s.get_conversation("gemini-web:gem1").messages) == 4
+    s.close()
+    assert _post(port, "/known?platform=gemini-web", token=token)[1]["known"] == {"gem1": "4"}
