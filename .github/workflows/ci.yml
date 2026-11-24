@@ -9,7 +9,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # macOS runners are slow to start, so macOS runs only on pushes to main; pull requests and other
+        # branches test on Linux and Windows.
+        os: ${{ fromJSON(github.event_name == 'push' && github.ref == 'refs/heads/main'
+              && '["ubuntu-latest", "macos-latest", "windows-latest"]' || '["ubuntu-latest", "windows-latest"]') }}
         python: ["3.10", "3.12", "3.13"]
     runs-on: ${{ matrix.os }}
     steps:
