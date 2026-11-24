@@ -6,6 +6,13 @@ All notable changes to ctxport are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- Re-syncing a conversation rewrites only the messages that changed. The browser extension sends a whole
+  conversation again after each new exchange; before, every message was deleted and re-inserted together with its
+  full-text index entries. On 600 synthetic conversations (33,760 messages) a re-sync with one new exchange each
+  took 0.74 s instead of 11.7 s, an unchanged re-sync 0.42 s instead of 11.1 s, and the database stayed 96 MB
+  instead of growing to 218 MB. `benchmarks/bench.py` reproduces the numbers.
+
 ### Fixed
 - E-mail addresses, WeChat / QQ ids and licence plates are no longer turned into memories (they were exported to
   every assistant and shown by `profile`). Conversation archives keep them, as before.

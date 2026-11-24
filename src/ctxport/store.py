@@ -186,6 +186,11 @@ class AmbiguousId(ValueError):
     pass
 
 
+def _text_or_none(v):
+    # msg_id / parent_id are TEXT columns: SQLite stores 5 as '5', so compare and write the same form
+    return None if v is None else str(v)
+
+
 def _j(obj) -> str:
     return json.dumps(obj or {}, ensure_ascii=False, default=str)
 
@@ -316,31 +321,55 @@ class Store:
         if not force and old is not None and old["updated_at"] and conv.updated_at \
                 and old["updated_at"] > conv.updated_at + 1:
             return False
-        self.db.execute("DELETE FROM messages WHERE conversation_id=?", (cid,))
         main = conv.messages
         user_count = sum(1 for m in main if m.role == "user" and m.kind == "message")
         chars = sum(len(m.text or "") for m in main if m.kind == "message")
+        # An upsert, not INSERT OR REPLACE: REPLACE deletes the row first, which would cascade to its messages.
         self.db.execute(
-            """INSERT OR REPLACE INTO conversations(id,platform,native_id,title,created_at,updated_at,project,model,
+            """INSERT INTO conversations(id,platform,native_id,title,created_at,updated_at,project,model,
                source_path,source_key,message_count,user_count,char_count,branch_count,meta,imported_at)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               ON CONFLICT(id) DO UPDATE SET platform=excluded.platform, native_id=excluded.native_id,
+               title=excluded.title, created_at=excluded.created_at, updated_at=excluded.updated_at,
+               project=excluded.project, model=excluded.model, source_path=excluded.source_path,
+               source_key=excluded.source_key, message_count=excluded.message_count, user_count=excluded.user_count,
+               char_count=excluded.char_count, branch_count=excluded.branch_count, meta=excluded.meta,
+               imported_at=excluded.imported_at""",
             (cid, conv.platform, conv.native_id, conv.title, conv.created_at, conv.updated_at, conv.project, conv.model,
              conv.source_path, source_key, len(main), user_count, chars, len(conv.branches), _j(conv.meta), time.time()),
         )
-        rows = []
+        rows = {}
         for b, msgs in enumerate([main] + list(conv.branches)):
             for i, m in enumerate(msgs):
                 text = m.text or ""
                 if m.kind in TOOL_KINDS and not self.keep_full_tools:
                     text = trim_tool_text(text)
-                rows.append((cid, b, i, m.id, m.parent_id, m.role, m.kind, text, m.model, m.created_at,
-                             _j(m.meta), m.raw if self.store_raw else None))
-        self.db.executemany(
-            "INSERT INTO messages(conversation_id,branch,idx,msg_id,parent_id,role,kind,text,model,created_at,meta,raw)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+                rows[(b, i)] = (_text_or_none(m.id), _text_or_none(m.parent_id), m.role, m.kind, text, m.model, m.created_at, _j(m.meta),
+                                m.raw if self.store_raw else None)
+        self._write_messages(cid, rows, fresh=old is None)
         if old is None or old["updated_at"] != conv.updated_at or old["message_count"] != len(main):
             self.db.execute("DELETE FROM extracted WHERE conversation_id=?", (cid,))
         return True
+
+    def _write_messages(self, cid: str, rows: dict, fresh: bool) -> None:
+        """Make the stored messages of `cid` equal to `rows` ({(branch, idx): column values}), touching only the
+        rows that changed. A re-synced conversation usually differs from the stored copy by a few new messages at
+        the end; rewriting all of them would also delete and re-insert every one in the full-text index."""
+        stale: list = []
+        if not fresh:
+            for r in self.db.execute("SELECT id, branch, idx, msg_id, parent_id, role, kind, text, model, created_at,"
+                                     " meta, raw FROM messages WHERE conversation_id=?", (cid,)):
+                key = (r[1], r[2])
+                if rows.get(key) == tuple(r[3:]):
+                    del rows[key]          # stored exactly like this already
+                else:
+                    stale.append((r[0],))  # changed, or no longer there
+        if stale:
+            self.db.executemany("DELETE FROM messages WHERE id=?", stale)
+        if rows:
+            self.db.executemany(
+                "INSERT INTO messages(conversation_id,branch,idx,msg_id,parent_id,role,kind,text,model,created_at,meta,raw)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", [(cid, b, i) + v for (b, i), v in rows.items()])
 
     def commit(self) -> None:
         self.db.commit()
