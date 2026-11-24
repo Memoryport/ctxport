@@ -19,6 +19,10 @@ All notable changes to ctxport are listed here. The format follows
 ### Packaging
 - PyPI metadata (project links, classifiers), the version is read from `ctxport.__version__` only,
   and a tag-triggered release workflow publishes to PyPI.
+- Smaller downloads: releases attach a 14 KB browser-extension zip (`scripts/pack_extension.py`, runtime files
+  only) and the wheel to a GitHub release, so nobody has to clone the repository; the sdist no longer ships tests
+  or the extension; GitHub source archives skip tests and CI files; CI enforces a size budget and checks that a
+  plain install pulls in no dependencies.
 
 ## [0.1.0] - 2026-11-24
 
