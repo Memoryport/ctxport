@@ -90,6 +90,7 @@ ctxport sync --extract            # 增量导入所有本地来源，并用规�
 ctxport import chatgpt ~/Downloads/chatgpt-export.zip
 ctxport stats                     # 每个平台的对话数、消息数、时间范围、常用模型
 ctxport memories edit             # 生成 ctxport-memories.md 勾选清单；改完再运行一次写回
+ctxport profile --copy            # 一页“我的背景”，复制后可粘贴到任何 AI
 ctxport export claude-code        # 预览到 ./ctxport-out/
 ctxport export claude-code --apply   # 写入 ~/.claude/CLAUDE.md 的 ctxport 区块
 ctxport export markdown           # 每个对话一个 .md 的完整归档 + INDEX.md + MEMORY.md
@@ -97,6 +98,20 @@ ctxport search 机器学习 部署       # 中文 ≥3 字走 FTS5，2 字自动
 ```
 
 默认**只写预览**到 `./ctxport-out/`；只有加 `--apply` 才写入真实位置，而且只改 `<!-- ctxport:begin … -->` 到 `<!-- ctxport:end -->` 之间的区块，第一次写入前把原文件备份为 `*.ctxport.bak`。
+
+## 一条命令总结你的个人背景
+
+换到一个新助手、想让它马上了解你？`ctxport profile` 把你的记忆和最近聊过的话题整理成一页简短的“我的背景”，可以直接粘贴。除非你用 `--llm` 并指定远程地址，否则数据不会离开本机。
+
+```bash
+ctxport sync --extract          # 第一次：导入本机对话并提取关于你的事实
+ctxport memories edit           # 建议：勾选要保留的事实
+ctxport profile --copy          # 把“我的背景”复制到剪贴板（或用 --out me.md 写成文件）
+ctxport profile --llm           # 再加一段由本地 Ollama 写的第一人称简介
+ctxport profile --max-chars 1500 --topics 0   # 适合 ChatGPT 自定义指令的字数限制
+```
+
+内容分三部分：可选的“简介”段落；按“关于我 / 工作与学习 / 偏好 / 项目 / 工具与环境”分组的记忆；以及“最近在做的事”（最近对话的标题，`--topics 0` 关闭，`--since 90d` 限定时间）。密钥会被打码。如果还没审核过任何记忆，会先用未审核的候选并提示你。粘贴到 ChatGPT → 设置 → 个性化 → 自定义指令、claude.ai/import-memory 或 Claude 项目说明、Gemini → 已保存的信息，或者直接作为新对话的第一条消息。
 
 ## 常见迁移场景
 

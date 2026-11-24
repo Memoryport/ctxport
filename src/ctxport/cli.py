@@ -318,6 +318,50 @@ def cmd_handoff(args) -> int:
     return 0
 
 
+def cmd_profile(args) -> int:
+    from .profile import build_profile, copy_to_clipboard
+    llm = None
+    if args.llm:
+        from .llm import RemoteNotAllowed
+        try:
+            llm = _llm_client(args)
+        except RemoteNotAllowed as e:
+            info(str(e))
+            return 2
+    with open_store(args) as s:
+        try:
+            text, st = build_profile(s, include_candidates=args.include_candidates, all_categories=args.all_categories,
+                                     topics=args.topics, since=parse_since(args.since), platform=args.platform,
+                                     redact=not args.no_redact, max_chars=args.max_chars, llm=llm)
+        except RuntimeError as e:  # LLM unreachable or returned an error
+            info(f"profile: {e}")
+            return 2
+    if not st["memories"] and not st["topics"]:
+        info("Nothing to summarize yet. Run `ctxport sync --extract` (or `ctxport import …`) first, "
+             "or add facts with `ctxport memories add \"I am …\"`.")
+        return 1
+    if args.out:
+        from .store import private_write_text
+        private_write_text(Path(args.out), text)
+        info(f"profile written to {args.out}")
+    copied = False
+    if args.copy:
+        copied = copy_to_clipboard(text)
+        info("copied to the clipboard" if copied else
+             "no clipboard tool found (pbcopy / clip / wl-copy / xclip); printing instead")
+    if not args.out and not copied:
+        print(text, end="")
+    info(f"profile: {st['memories']} memories, {st['topics']} recent topics, {st['chars']} characters"
+         + (" + an LLM summary" if st["summary"] else ""))
+    if st["used_candidates"] and not args.include_candidates:
+        info("Note: nothing is reviewed yet, so this uses unreviewed candidates. "
+             "Check them with `ctxport memories edit` before sharing.")
+    info("Paste it into a new assistant: ChatGPT → Settings → Personalization → Custom instructions; "
+         "Claude → claude.ai/import-memory or a project's instructions; Gemini → Saved info. "
+         "粘贴到新助手的个性化设置或第一条消息里即可。")
+    return 0
+
+
 def cmd_stats(args) -> int:
     with open_store(args) as s:
         st = s.stats()
@@ -482,6 +526,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out")
     _add_llm_flags(p)
     p.set_defaults(fn=cmd_handoff)
+
+    p = sub.add_parser("profile", help="one-page summary of your background, ready to paste into another AI")
+    p.add_argument("--out", help="write to this file instead of printing")
+    p.add_argument("--copy", action="store_true", help="also copy it to the clipboard")
+    p.add_argument("--topics", type=int, default=15, help="how many recent conversation titles to list (0 = none)")
+    p.add_argument("--since", help="only topics from conversations updated since, e.g. 90d or 2026-01-01")
+    p.add_argument("--platform", help="only memories and topics from these platforms (comma separated)")
+    p.add_argument("--max-chars", type=int, help="trim to this many characters (ChatGPT custom instructions: 1500)")
+    p.add_argument("--include-candidates", action="store_true", help="also include unreviewed memory candidates")
+    p.add_argument("--all-categories", action="store_true",
+                   help="also include agent instruction files and assistant prompts")
+    p.add_argument("--no-redact", action="store_true")
+    _add_llm_flags(p)
+    p.set_defaults(fn=cmd_profile)
 
     p = sub.add_parser("stats", help="per-platform statistics")
     p.add_argument("--json", action="store_true")

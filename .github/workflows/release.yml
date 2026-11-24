@@ -1,6 +1,7 @@
 name: Release
 
-# Push a tag like v0.2.0 to build ctxport and publish it to PyPI.
+# Push a tag like v0.2.0 to build ctxport, publish it to PyPI and create a GitHub release with
+# the wheel and the browser extension zip attached (so users never need to clone the repository).
 # Publishing uses PyPI trusted publishing (no API token in the repo). One-time setup on pypi.org:
 #   Publishing → Add a new pending publisher → owner "Memoryport", repository "ctxport",
 #   workflow "release.yml", environment "pypi". Also create the "pypi" environment in the repo settings.
@@ -29,6 +30,8 @@ jobs:
           python -m pip install build twine
           python -m build
           python -m twine check --strict dist/*
+      - name: Pack the browser extension
+        run: python scripts/pack_extension.py
       - name: Smoke-test the wheel
         run: |
           python -m pip install dist/*.whl
@@ -53,3 +56,22 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Create the release with the wheel and extension zip attached
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "ctxport $GITHUB_REF_NAME" \
+            --notes "Install the CLI: \`pipx install ctxport\` (or download the .whl below and \`pipx install ./ctxport-*.whl\`).
+          Browser extension: download ctxport-extension-*.zip below, unzip it, then load the folder in chrome://extensions or edge://extensions with Developer mode on.
+          See CHANGELOG.md for what changed."

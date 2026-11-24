@@ -37,7 +37,7 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install "ruff>=0.5"
       - name: Ruff (errors only, config in pyproject.toml)
-        run: ruff check src tests
+        run: ruff check src tests scripts
 
   extension:
     runs-on: ubuntu-latest
@@ -52,3 +52,40 @@ jobs:
         run: node -e "JSON.parse(require('fs').readFileSync('extension/manifest.json', 'utf8'))"
       - name: Extension unit tests
         run: for t in extension/test/*.test.js; do echo "== $t"; node "$t"; done
+
+  package:
+    # Keep downloads small: the wheel, the source distribution and the extension zip must stay lean.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build wheel, sdist and extension zip
+        run: |
+          python -m pip install build twine
+          python -m build
+          python -m twine check --strict dist/*
+          python scripts/pack_extension.py
+      - name: Size budget and contents
+        shell: python
+        run: |
+          import glob, os, tarfile, zipfile
+          budget = {"*.whl": 200, "*.tar.gz": 200, "ctxport-extension-*.zip": 60}  # KB
+          for pattern, kb in budget.items():
+              (path,) = glob.glob(f"dist/{pattern}")
+              size = os.path.getsize(path) / 1024
+              print(f"{path}: {size:.1f} KB (budget {kb} KB)")
+              assert size <= kb, f"{path} is {size:.1f} KB, over the {kb} KB budget"
+          (sdist,) = glob.glob("dist/*.tar.gz")
+          bad = [n for n in tarfile.open(sdist).getnames() if "/tests/" in n or "/extension/" in n or "__pycache__" in n]
+          assert not bad, f"sdist should not ship {bad[:5]}"
+          (wheel,) = glob.glob("dist/*.whl")
+          bad = [n for n in zipfile.ZipFile(wheel).namelist() if "__pycache__" in n or n.startswith("tests/")]
+          assert not bad, f"wheel should not ship {bad[:5]}"
+      - name: Install from the wheel with no extras pulls in no dependencies
+        run: |
+          python -m venv /tmp/v
+          /tmp/v/bin/pip install dist/*.whl
+          /tmp/v/bin/pip list --format=freeze | grep -v -E "^(ctxport|pip|setuptools)==" && exit 1 || true
+          /tmp/v/bin/ctxport --version

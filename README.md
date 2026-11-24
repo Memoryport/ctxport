@@ -95,6 +95,7 @@ ctxport sync --extract               # import every local source incrementally a
 ctxport import chatgpt ~/Downloads/chatgpt-export.zip
 ctxport stats                        # conversations, messages, time range and models per platform
 ctxport memories edit                # writes a ctxport-memories.md checklist; edit it, then run again to apply
+ctxport profile --copy               # one-page summary of your background, ready to paste into any AI
 ctxport export claude-code           # preview into ./ctxport-out/
 ctxport export claude-code --apply   # write the ctxport block in ~/.claude/CLAUDE.md
 ctxport export markdown              # full archive: one .md per conversation + INDEX.md + MEMORY.md
@@ -102,6 +103,26 @@ ctxport search "vector database"     # FTS5 for 3+ characters, falls back to LIK
 ```
 
 By default ctxport **only writes previews** to `./ctxport-out/`. Only `--apply` writes to the real locations, and then it only changes the block between `<!-- ctxport:begin … -->` and `<!-- ctxport:end -->`. The original file is backed up as `*.ctxport.bak` before the first write.
+
+## Summarize your background in one command
+
+Starting fresh with a new assistant? `ctxport profile` turns your memories and recent chat topics into one short
+page you can paste anywhere. Nothing leaves your machine unless you add `--llm` with a remote endpoint.
+
+```bash
+ctxport sync --extract          # once: import your local chats and pick out facts about you
+ctxport memories edit           # optional but recommended: tick the facts you want to keep
+ctxport profile --copy          # copy "My background" to the clipboard (or --out me.md)
+ctxport profile --llm           # also add a short first-person summary written by your local Ollama
+ctxport profile --max-chars 1500 --topics 0   # fits ChatGPT's custom-instructions box
+```
+
+The page has three parts: an optional *In short* paragraph, your memories grouped as *About me*, *Work*,
+*Preferences*, *Projects* and *Tools*, and *Things I've been working on lately* (titles of your most recent
+conversations; `--topics 0` leaves them out, `--since 90d` narrows them). Secrets are masked. If you haven't
+reviewed anything yet, it falls back to the unreviewed candidates and tells you so. Paste it into ChatGPT →
+Settings → Personalization → Custom instructions, claude.ai/import-memory or a Claude project, Gemini → Saved info,
+or simply as the first message of a new chat.
 
 ## Common migrations
 

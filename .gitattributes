@@ -1,0 +1,6 @@
+# GitHub "Download ZIP" and release source archives skip what end users don't need.
+tests/          export-ignore
+extension/test/ export-ignore
+.github/        export-ignore
+.gitattributes  export-ignore
+*.png binary
