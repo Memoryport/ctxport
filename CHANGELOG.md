@@ -7,6 +7,11 @@ All notable changes to ctxport are listed here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- Extension: one conversation that keeps failing to download no longer aborts the whole ChatGPT / Claude sync. It is
+  skipped, counted in the popup and fetched again next sync; the rest, memories and custom instructions are still
+  sent. Signing out or the local ctxport server refusing data stops every parallel download at once.
+- After an inbox file is gzip-compressed (by `compact`, or rewritten by the extension), the plain file's row is removed
+  from the sources table instead of staying there for ever.
 - Importing an older copy of a conversation (an official export downloaded before the browser extension synced newer
   messages) no longer replaces the newer one. The stored copy is kept with a warning; `--force` overwrites on purpose.
 - Sentences holding a secret or a personal identifier (API keys, passwords, ID card, phone and card numbers) are never

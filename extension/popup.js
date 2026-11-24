@@ -7,7 +7,7 @@ function fmtStatus(s) {
   if (s.state === "running") return ["同步中…", ""];
   if (s.state === "error") return [s.error, "err"];
   const r = s.result || {};
-  return [`${r.total ?? "?"} 个对话 · 本次 ${r.imported ?? 0} · ${when}`, "ok"];
+  return [`${r.total ?? "?"} 个对话 · 本次 ${r.imported ?? 0}${r.failed ? ` · ${r.failed} 个下载失败（下次重试）` : ""} · ${when}`, r.failed ? "err" : "ok"];
 }
 
 async function refresh() {

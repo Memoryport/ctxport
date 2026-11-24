@@ -66,26 +66,45 @@
     return null;
   }
 
+  // An error that makes going on pointless: signed out (401/403), or the local ctxport server refused the data.
+  const isFatal = (e) => !!e && (e.status === 401 || e.status === 403 || e.fatal === true);
+
   // Run `fn` over `items` with at most `n` in flight (or fewer while `gate.cur` is lowered after a 429).
+  // One item that keeps failing is logged and skipped (it is fetched again next sync, since it never reached
+  // the inbox), so it cannot abort the whole sync. A fatal error stops every worker, and is rethrown only once
+  // all of them have finished, so no worker keeps running after the sync has returned.
+  // Returns the number of items that failed.
   async function pool(items, n, fn, gate, io) {
-    let next = 0;
+    let next = 0, failed = 0, fatal = null;
     const worker = async (_, w) => {
-      while (next < items.length) {
+      while (next < items.length && !fatal) {
         if (gate && w >= gate.cur) {  // this worker is parked until the limit grows again
           await (io ? io.sleep(1000) : new Promise((r) => setTimeout(r, 1000)));
           continue;
         }
         const i = next++;
-        await fn(items[i], i);
+        try {
+          await fn(items[i], i);
+        } catch (e) {
+          if (isFatal(e)) { fatal = fatal || e; break; }
+          failed++;
+          if (io && io.log) io.log(`skipped one item after repeated errors: ${(e && (e.status || e.message)) || e}`);
+        }
       }
     };
     await Promise.all(Array.from({ length: Math.min(n, items.length) }, worker));
+    if (fatal) throw fatal;
+    return failed;
   }
 
   async function flush(io, platform, buf, extra) {
     if (!buf.length && !extra) return { conversations: 0 };
     const payload = Object.assign({ platform, conversations: buf.splice(0, buf.length) }, extra || {});
-    return io.push(payload);
+    try {
+      return await io.push(payload);
+    } catch (e) {
+      throw Object.assign(e instanceof Error ? e : new Error(String(e)), { fatal: true });
+    }
   }
 
   // ------------------------------------------------------------------ ChatGPT
@@ -146,7 +165,7 @@
     io.log(`ChatGPT: ${items.size} total, ${todo.length} new or changed, downloading ${N} at a time`);
     const buf = [];
     let done = 0, sent = 0;
-    await pool(todo, N, async (it) => {
+    const failed = await pool(todo, N, async (it) => {
       const conv = await get(`/backend-api/conversation/${it.id}`);
       done++;
       if (conv) {
@@ -165,7 +184,8 @@
     try { const ci = await get("/backend-api/user_system_messages"); if (ci) extra.custom_instructions = ci; } catch (e) { /* optional */ }
     const r = await flush(io, "chatgpt", buf, Object.keys(extra).length ? extra : null);
     sent += (r && r.conversations) || 0;
-    return { platform: "chatgpt", total: items.size, fetched: done, imported: sent };
+    if (failed) io.log(`ChatGPT: ${failed} conversation(s) could not be downloaded; they are retried next sync`);
+    return { platform: "chatgpt", total: items.size, fetched: done, imported: sent, failed };
   }
 
   // ------------------------------------------------------------------ Claude.ai
@@ -177,7 +197,7 @@
     if (!Array.isArray(orgs) || !orgs.length) throw Object.assign(new Error("not logged in to Claude.ai"), { status: 401 });
     const chatOrgs = orgs.filter((o) => !o.capabilities || o.capabilities.includes("chat"));
     const known = (await io.known()) || {};
-    let total = 0, done = 0, sent = 0;
+    let total = 0, done = 0, sent = 0, failed = 0;
     for (const org of chatOrgs.length ? chatOrgs : orgs) {
       const base = `/api/organizations/${org.uuid}`;
       const seen = new Map();
@@ -194,7 +214,7 @@
       const todo = [...seen.values()].filter((c) => io.full || known[c.uuid] !== String(c.updated_at));
       io.log(`Claude (${org.name || org.uuid}): ${seen.size} total, ${todo.length} new or changed`);
       const buf = [];
-      await pool(todo, N, async (c) => {
+      failed += await pool(todo, N, async (c) => {
         const conv = await get(`${base}/chat_conversations/${c.uuid}?tree=True&rendering_mode=messages&render_all_tools=true`);
         done++;
         if (conv) {
@@ -222,7 +242,8 @@
       const r = await flush(io, "claude-ai", buf, Object.keys(extra).length ? extra : null);
       sent += (r && r.conversations) || 0;
     }
-    return { platform: "claude-ai", total, fetched: done, imported: sent };
+    if (failed) io.log(`Claude: ${failed} conversation(s) could not be downloaded; they are retried next sync`);
+    return { platform: "claude-ai", total, fetched: done, imported: sent, failed };
   }
 
   // ------------------------------------------------------------------ Gemini (DOM scrape; experimental)

@@ -64,6 +64,11 @@ def import_unit(store: Store, imp: Importer, unit: Path, force: bool, report: Sy
         report.warnings.append(f"{Path(unit).name}: kept the stored copy of {kept} conversation(s) "
                                "because it is newer than this file (use --force to overwrite)")
     store.set_source(key, imp.name, str(unit), sig, len(res.conversations), len(res.warnings))
+    unit = Path(unit)
+    if unit.name.endswith(".json.gz") and not unit.with_name(unit.name[:-3]).exists():
+        # the inbox file was gzip-compressed (by `compact`, or rewritten by the extension): drop the plain
+        # file's bookkeeping row, which would otherwise stay in `sources` for ever
+        store.forget_source(imp.unit_key(unit.with_name(unit.name[:-3])))
 
 
 def import_path(store: Store, platform: str, path: Optional[Path], force: bool = False,

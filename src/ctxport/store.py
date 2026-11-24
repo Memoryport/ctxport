@@ -294,6 +294,10 @@ class Store:
         )
         self.db.commit()
 
+    def forget_source(self, key: str) -> None:
+        self.db.execute("DELETE FROM sources WHERE key=?", (key,))
+        self.db.commit()
+
     # ------------------------------------------------------------ conversations
     def upsert_conversation(self, conv: Conversation, source_key: Optional[str] = None, force: bool = False) -> bool:
         """Store a conversation, replacing the stored copy. Returns False, and changes nothing, when the stored copy

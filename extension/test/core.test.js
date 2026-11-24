@@ -64,6 +64,18 @@ async function testChatGPT() {
   // full resync fetches everything
   const io2 = makeIO(routes, { a: "2026-01-01", b: "2026-01-02" }, true);
   assert.strictEqual((await Core.syncChatGPT(io2)).fetched, 4);
+  // a conversation that keeps failing is skipped: the rest are still sent, and memories still fetched
+  const broken = [[/^\/backend-api\/conversation\/b$/, () => Object.assign(new Error("server error"), { status: 500 })],
+    ...routes.filter(([re]) => !String(re).includes("conversation\\/b"))];
+  const io4 = makeIO(broken, {});
+  const r4 = await Core.syncChatGPT(io4);
+  assert.strictEqual(r4.failed, 1);
+  assert.deepStrictEqual(io4.pushed.flatMap((p) => p.conversations).map((c) => c.conversation_id).sort(), ["a", "p1", "z"]);
+  assert.deepStrictEqual(io4.pushed[io4.pushed.length - 1].memories, [{ content: "likes tea" }]);
+  // the local server refusing the data stops the sync instead of downloading everything for nothing
+  const io5 = makeIO(routes, {});
+  io5.push = async () => { throw new Error("ctxport server unreachable"); };
+  await assert.rejects(Core.syncChatGPT(io5), /unreachable/);
   // logged out
   const io3 = makeIO([[/session/, {}]]);
   await assert.rejects(Core.syncChatGPT(io3), /not logged in/);
@@ -155,6 +167,24 @@ async function testParallel() {
   });
   assert.strictEqual(peak, 3);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(seen.sort())), [1, 2, 3, 4, 5, 6, 7]);
+  // one item that keeps failing is skipped and counted; the others still run
+  const done2 = [];
+  const failed = await Core.pool([1, 2, 3, 4], 2, async (x) => {
+    if (x === 2) throw Object.assign(new Error("boom"), { status: 500 });
+    done2.push(x);
+  }, null, { log() {}, sleep: async () => {} });
+  assert.strictEqual(failed, 1);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(done2.sort())), [1, 3, 4]);
+  // a fatal error (signed out) stops every worker and is rethrown once they have all finished
+  let started = 0, running = 0;
+  await assert.rejects(Core.pool([1, 2, 3, 4, 5, 6], 2, async (x) => {
+    started++; running++;
+    await new Promise((r) => setTimeout(r, 5));
+    running--;
+    if (x === 1) throw Object.assign(new Error("signed out"), { status: 401 });
+  }), /signed out/);
+  assert.strictEqual(running, 0, "no worker is still running after pool() rejected");
+  assert.ok(started < 6, "stopped handing out work after the fatal error");
   assert.strictEqual(Core.concurrency({}), Core.DEFAULT_CONCURRENCY);
   assert.strictEqual(Core.concurrency({ concurrency: 99 }), 8);
   assert.strictEqual(Core.concurrency({ concurrency: 0 }), Core.DEFAULT_CONCURRENCY);
