@@ -60,7 +60,9 @@ def test_claude_ai(tmp_path):
     assert c.messages[0].meta["attachments"][0]["name"] == "notes.txt"
     assert abs(c.created_at - 1735787045.123456) < 1e-3  # 7-digit fraction parsed
     proj = [m for m in res.memories if m.scope == "project:Thesis"]
-    assert {m.text for m in proj} == {"Always cite sources", "Use LaTeX"}
+    assert {m.text for m in proj if m.category == "custom_instructions"} == {"Always cite sources", "Use LaTeX"}
+    # the project memory keeps its project (keyed by uuid in memories.json)
+    assert {m.text for m in proj if m.category == "platform_memory"} == {"Thesis on graphs."}
     assert "project-p1" in convs
     assert any(m.text == "User studies math." for m in res.memories)
 

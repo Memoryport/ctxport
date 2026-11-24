@@ -76,3 +76,26 @@ def redact(text: str) -> str:
 
 def maybe(text: str, enabled: bool = True) -> str:
     return redact(text) if enabled else text
+
+
+# Personal identifiers that a memory should never hold. Unlike the secrets above they are not masked in exported
+# conversations (yet), but a sentence containing one is never turned into a memory.
+_PII = [
+    re.compile(r"(?<![\dA-Za-z])\d{6}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx](?![\dA-Za-z])"),  # CN ID
+    re.compile(r"(?<![\d+])(?:\+?86[-\s]?)?1[3-9]\d[-\s]?\d{4}[-\s]?\d{4}(?!\d)"),   # CN mobile
+    re.compile(r"(?<!\d)(?:\d[ -]?){15,18}\d(?!\d)"),                                 # card / account numbers
+]
+_SENSITIVE_WORDS = re.compile(
+    r"(?i)(密码|口令|密钥|秘钥|私钥|令牌|验证码|身份证|护照|银行卡|信用卡|卡号|社保号|"
+    r"\bpassword\b|\bpasswd\b|\bpassphrase\b|\bapi[ _-]?key\b|\bsecret\b|\bprivate key\b|\btoken\b|"
+    r"\bssn\b|social security|passport|credit card|\biban\b)")
+
+
+def is_sensitive(text: str) -> bool:
+    """True when `text` holds a secret, a credential-like word, or a personal identifier. Used to keep such
+    sentences out of memories (extraction, questionnaire answers, imported lists)."""
+    if not text:
+        return False
+    if redact(text) != text:
+        return True
+    return bool(_SENSITIVE_WORDS.search(text) or any(rx.search(text) for rx in _PII))

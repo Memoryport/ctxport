@@ -22,6 +22,7 @@ class SyncReport:
     conversations: int = 0
     messages: int = 0
     memories_new: int = 0
+    kept_newer: int = 0
     warnings: list = field(default_factory=list)
 
 
@@ -41,12 +42,15 @@ def import_unit(store: Store, imp: Importer, unit: Path, force: bool, report: Sy
         if os.environ.get("CTXPORT_DEBUG"):
             traceback.print_exc()
         return
+    kept = 0
     for conv in res.conversations:
         if not conv.messages and not conv.branches:
             continue
         if not conv.source_path:
             conv.source_path = str(unit)
-        store.upsert_conversation(conv, key)
+        if not store.upsert_conversation(conv, key, force=force):
+            kept += 1
+            continue
         report.conversations += 1
         report.messages += len(conv.messages)
     for mem in res.memories:
@@ -55,6 +59,10 @@ def import_unit(store: Store, imp: Importer, unit: Path, force: bool, report: Sy
     store.commit()
     report.imported += 1
     report.warnings += [f"{Path(unit).name}: {w}" for w in res.warnings]
+    report.kept_newer += kept
+    if kept:
+        report.warnings.append(f"{Path(unit).name}: kept the stored copy of {kept} conversation(s) "
+                               "because it is newer than this file (use --force to overwrite)")
     store.set_source(key, imp.name, str(unit), sig, len(res.conversations), len(res.warnings))
 
 

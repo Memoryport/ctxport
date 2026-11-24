@@ -7,7 +7,7 @@ from typing import Callable, Optional
 
 from .llm import LLMClient, parse_json_array
 from .models import Conversation, MemoryItem
-from .redact import redact
+from .redact import is_sensitive, redact
 from .store import Store
 from .utils import chunks
 
@@ -71,7 +71,12 @@ def split_sentences(text: str) -> list:
 
 
 def rule_candidates(text: str) -> list:
-    """[(sentence, category)] from one user message."""
+    """[(sentence, category)] from one user message. Sentences holding a secret or a personal identifier are
+    never returned ("my OpenAI key is sk-…, why 401?" must not become a fact about you)."""
+    return [(s, c) for s, c in _rule_candidates(text) if not is_sensitive(s)]
+
+
+def _rule_candidates(text: str) -> list:
     found = []
     if not text or len(text) > 20000:
         return found
@@ -160,7 +165,7 @@ def llm_candidates(client: LLMClient, texts: list, chunk_chars: int = 6000) -> l
                 continue
             text = str(item.get("text") or "").strip()
             cat = str(item.get("category") or "general").lower()
-            if 4 <= len(text) <= 400:
+            if 4 <= len(text) <= 400 and not is_sensitive(text):
                 out.append((text, cat if cat in CATEGORIES else "general"))
     return out
 
@@ -171,6 +176,7 @@ def run_extract(store: Store, llm: Optional[LLMClient] = None, platform: Optiona
     method = "llm" if llm else "rules"
     since = time.time() - days * 86400 if days else None
     stats = {"conversations": 0, "skipped": 0, "new": 0, "method": method}
+    store.purge_sensitive_candidates()  # left by versions that didn't filter them
     for row in store.conversation_rows(platform=platform, limit=limit, since=since):
         cid = row["id"]
         if store.is_extracted(cid, method):
@@ -268,7 +274,7 @@ def render_review(memories: list) -> str:
         for m in sorted(by_scope[scope], key=lambda x: (x.status != "accepted", x.category, -(x.seen_count or 1),
                                                         -x.confidence)):
             box = "x" if m.status == "accepted" else " "
-            text = " ".join(m.text.split())
+            text = " ".join(redact(m.text).split())
             lines.append(f"- [{box}] {text} <!-- {m.id} {m.category} -->" + _review_note(m, outdated))
         lines.append("")
     return "\n".join(lines)
@@ -297,7 +303,8 @@ def apply_review(store: Store, entries: list) -> dict:
                 store.set_memory_status(e["id"], "rejected")
                 stats["rejected"] += 1
             continue
-        if " ".join(old.text.split()) != e["text"] and e["text"]:
+        shown = " ".join(redact(old.text).split())  # the checklist shows masked text; unchanged means unchanged
+        if e["text"] and e["text"] not in (" ".join(old.text.split()), shown):
             store.update_memory_text(e["id"], e["text"], e["category"], status="accepted")
             stats["rewritten"] += 1
         elif old.status != "accepted" or old.category != e["category"]:
