@@ -28,6 +28,15 @@ ZH_RULES = [
     (re.compile(r"^(以后|今后|之后)(请|都|要)"), "preference"),
     (re.compile(r"^请记住"), "general"),
     (re.compile(r"^我的.{1,12}是"), "identity"),
+    # broader self-descriptions (C2)
+    (re.compile(r"^作为(一名|一个|一位)?.{1,15}[，,]"), "identity"),
+    (re.compile(r"^我(是|在)做.{1,20}的"), "work"),
+    (re.compile(r"^我(之前|以前)?(学|读)的是"), "work"),
+    (re.compile(r"^我(的)?(技术栈|工作|专业|研究方向|主业)是"), "work"),
+    (re.compile(r"^我(正在|在)(做|开发|写|研究|准备|搭建)"), "project"),
+    (re.compile(r"^我们?(团队|公司|组)(主要|一般|平时)?(用|使用)"), "tooling"),
+    (re.compile(r"^我(平时|一般|主要|经常|日常)(写|用|使用|在用)"), "tooling"),
+    (re.compile(r"^我(对|在).{1,15}(是新手|不太熟|比较熟|很熟)"), "identity"),
 ]
 EN_RULES = [
     (re.compile(r"^i am an? ", re.I), "identity"),
@@ -38,7 +47,18 @@ EN_RULES = [
     (re.compile(r"^i (prefer|like|love|hate|always|never|usually) ", re.I), "preference"),
     (re.compile(r"^i (mainly |mostly |usually )?use ", re.I), "tooling"),
     (re.compile(r"^(please (always|remember|never)|from now on)\b", re.I), "preference"),
+    # broader self-descriptions (C2)
+    (re.compile(r"^as an? [\w-]+( [\w-]+){0,3},", re.I), "identity"),
+    (re.compile(r"^i work as ", re.I), "work"),
+    (re.compile(r"^i have \d+\+? years? of experience", re.I), "identity"),
+    (re.compile(r"^i'?m (new to|a beginner|an expert|experienced) ", re.I), "identity"),
+    (re.compile(r"^i'?m (currently )?(building|working on|developing|writing|researching) ", re.I), "project"),
+    (re.compile(r"^(my|our) (tech )?(stack|setup) (is|includes|uses) ", re.I), "tooling"),
+    (re.compile(r"^we (mainly |mostly |usually )?use ", re.I), "tooling"),
 ]
+# A question can still open with a self-description: "我是前端开发，怎么学 Rust？" → "我是前端开发".
+_CLAUSE = re.compile(r"[，,:：]")
+_LEAD_CATEGORIES = ("identity", "work", "project", "tooling")
 
 
 def split_sentences(text: str) -> list:
@@ -58,17 +78,63 @@ def rule_candidates(text: str) -> list:
     for s in split_sentences(text):
         if not (6 <= len(s) <= 200):
             continue
-        if _QUESTION_END.search(s) or _CODE_HINT.search(s):
+        if _CODE_HINT.search(s):
+            continue
+        if _QUESTION_END.search(s):
+            lead = _CLAUSE.split(s, 1)[0].strip()
+            if lead != s and 6 <= len(lead) <= 80:
+                for rx, cat in ZH_RULES + EN_RULES:
+                    if cat in _LEAD_CATEGORIES and rx.search(lead):
+                        found.append((lead, cat))
+                        break
             continue
         for rx, cat in ZH_RULES + EN_RULES:
             if rx.search(s):
-                found.append((s.rstrip("。.;；"), cat))
+                found.append((_as_statement(s.rstrip("。.;；")), cat))
                 break
     return found
 
 
+_AS_ZH = re.compile(r"^作为((?:一名|一个|一位)?)(.{1,15}?)[，,]")
+_AS_EN = re.compile(r"^as (an?) ([\w-]+(?: [\w-]+){0,3}),", re.I)
+
+
+def _as_statement(s: str) -> str:
+    """"作为一名老师，我想…" → "我是一名老师"; "As a data scientist, I need…" → "I am a data scientist"."""
+    m = _AS_ZH.match(s)
+    if m:
+        return f"我是{m.group(1)}{m.group(2)}"
+    m = _AS_EN.match(s)
+    if m:
+        return f"I am {m.group(1).lower()} {m.group(2)}"
+    return s
+
+
 def user_texts(conv: Conversation) -> list:
-    return [m.text for m in conv.messages if m.role == "user" and m.kind == "message" and (m.text or "").strip()]
+    """Your own messages from the main line and from branches (edits and regenerations), main line first."""
+    out = [m.text for m in conv.messages if m.role == "user" and m.kind == "message" and (m.text or "").strip()]
+    seen = set(out)
+    for branch in conv.branches:
+        for m in branch:
+            if m.role == "user" and m.kind == "message" and (m.text or "").strip() and m.text not in seen:
+                seen.add(m.text)
+                out.append(m.text)
+    return out
+
+
+_CONFIRM = re.compile(r"^\s*(对|对的|是的|没错|正确|就是这样|yes|yep|yeah|exactly|correct|right|that's right)[\s。.!！,，]*$",
+                      re.I)
+
+
+def confirmed_summaries(conv: Conversation, limit: int = 600) -> list:
+    """Assistant statements you explicitly confirmed ("so your stack is X and Y?" → "yes"). Only these assistant
+    words are used, and only by LLM extraction, marked as confirmed by you."""
+    out = []
+    msgs = [m for m in conv.messages if m.kind == "message" and m.role in ("user", "assistant")]
+    for prev, cur in zip(msgs, msgs[1:]):
+        if prev.role == "assistant" and cur.role == "user" and _CONFIRM.match(cur.text or ""):
+            out.append("[An assistant said this and I confirmed it] " + (prev.text or "")[-limit:])
+    return out
 
 
 SYSTEM_PROMPT = """You extract durable personal memory about the USER from their own chat messages.
@@ -119,6 +185,7 @@ def run_extract(store: Store, llm: Optional[LLMClient] = None, platform: Optiona
         texts = user_texts(conv)
         scope = "global"
         if llm:
+            texts = texts + confirmed_summaries(conv)
             pairs = llm_candidates(llm, texts) if texts else []
             conf = LLM_CONFIDENCE
         else:

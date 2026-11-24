@@ -373,12 +373,12 @@ class Store:
         use_fts = self.fts and all(len(t) >= 3 for t in terms) and set(kinds) <= set(FTS_KINDS)
         if use_fts:
             fts_q = " AND ".join('"' + t.replace('"', '""') + '"' for t in terms)
-            sql = ("SELECT m.*, c.title, c.platform FROM messages_fts f JOIN messages m ON m.id=f.rowid "
+            sql = ("SELECT m.*, c.title, c.platform, c.updated_at AS conv_updated_at FROM messages_fts f JOIN messages m ON m.id=f.rowid "
                    "JOIN conversations c ON c.id=m.conversation_id WHERE messages_fts MATCH ? AND " + kind_sql)
             args = [fts_q] + kinds
         else:
             like = " AND ".join("m.text LIKE ? ESCAPE '\\'" for _ in terms)
-            sql = ("SELECT m.*, c.title, c.platform FROM messages m JOIN conversations c ON c.id=m.conversation_id "
+            sql = ("SELECT m.*, c.title, c.platform, c.updated_at AS conv_updated_at FROM messages m JOIN conversations c ON c.id=m.conversation_id "
                    f"WHERE {like} AND " + kind_sql)
             args = ["%" + t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" for t in terms] + kinds
         if platform:

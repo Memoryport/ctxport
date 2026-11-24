@@ -110,19 +110,75 @@ def _llm_client(args):
 
 
 def cmd_extract(args) -> int:
-    from .extract import run_extract
+    from .extract import coverage_report, format_coverage, run_extract
     from .llm import RemoteNotAllowed
+    from .questionnaire import extract_by_questions, format_question_coverage
     try:
-        llm = _llm_client(args) if args.llm else None
+        llm = _llm_client(args) if (args.llm or args.questions) else None
     except RemoteNotAllowed as e:
         info(str(e))
         return 2
-    from .extract import coverage_report, format_coverage
     with open_store(args) as s:
-        st = run_extract(s, llm, platform=args.platform, days=args.days, limit=args.limit, progress=info)
-        info(f"extract[{st['method']}]: {st['conversations']} conversations processed, {st['skipped']} already done, "
-             f"{st['new']} new candidates. Review with `ctxport memories edit`.")
-        info(format_coverage(coverage_report(s)))
+        if args.questions:
+            try:
+                st = extract_by_questions(s, llm, stage=args.stage, progress=info, redo=args.redo)
+            except RuntimeError as e:  # LLM unreachable
+                info(f"extract --questions: {e}")
+                return 2
+            info(f"questions: {st['asked']} asked, {st['answered']} answered, {st['unknown']} unknown, "
+                 f"{st['no_excerpts']} with nothing in your history; {st['new']} new candidates. "
+                 "Review with `ctxport memories edit`.")
+        else:
+            st = run_extract(s, llm, platform=args.platform, days=args.days, limit=args.limit, progress=info)
+            info(f"extract[{st['method']}]: {st['conversations']} conversations processed, {st['skipped']} already "
+                 f"done, {st['new']} new candidates. Review with `ctxport memories edit`.")
+            info(format_coverage(coverage_report(s)))
+        info(format_question_coverage(s))
+    return 0
+
+
+def run_interview(s: Store, stage=None, max_questions: int = 5, ask_all: bool = False,
+                  read=input, write=print) -> int:
+    """Ask unanswered questionnaire questions in stage order; answers are saved as accepted memories."""
+    from .questionnaire import questions, unanswered
+    todo = questions(stage) if ask_all else unanswered(s, stage)
+    if not todo:
+        write("Every question already has an answer. `ctxport ask --all` asks them again.")
+        return 0
+    write(f"{len(todo)} unanswered; asking up to {max_questions}. Enter to skip, q to stop. "
+          "Answers are saved on this computer only. / 回车跳过，q 退出，答案只保存在本机。")
+    saved = 0
+    for q in todo[:max_questions]:
+        try:
+            ans = read(f"\n[{q.stage}] {q.zh}\n    {q.en}\n> ").strip()
+        except EOFError:
+            break
+        if ans.lower() in ("q", "quit", "exit"):
+            break
+        if not ans:
+            continue
+        r = s.upsert_memory(MemoryItem(text=ans, platform="manual", category=q.category, status="accepted",
+                                       question=q.id))
+        s.commit()
+        saved += r in ("new", "updated", "seen")
+    write(f"saved {saved} answer(s)")
+    return saved
+
+
+def cmd_ask(args) -> int:
+    if not sys.stdin.isatty() and not args.force:
+        info("`ctxport ask` needs an interactive terminal.")
+        return 2
+    with open_store(args) as s:
+        run_interview(s, stage=args.stage, max_questions=args.max, ask_all=args.all)
+    return 0
+
+
+def cmd_prompt(args) -> int:
+    from .questionnaire import self_report_prompt
+    print(self_report_prompt(args.lang, args.stage), end="")
+    info("Paste this into the assistant you are leaving (ChatGPT, Claude, Gemini …), save its answer to a file, "
+         "then run `ctxport memories import <file> --platform <name>`. Everything imported is a candidate for review.")
     return 0
 
 
@@ -136,13 +192,28 @@ def cmd_memories(args) -> int:
                 seen = f"×{m.seen_count}" if (m.seen_count or 1) > 1 else ""
                 print(f"{m.id}  [{m.status[:4]}] {m.scope:>10} {m.category:<18} {seen:>4} {redact(m.text)[:160]}")
             return 0
+        if a == "import":
+            from .questionnaire import parse_memory_list
+            items = parse_memory_list(Path(args.file).read_text(encoding="utf-8"))
+            n = 0
+            for cat, qid, fact in items:
+                n += s.upsert_memory(MemoryItem(text=fact, platform=args.platform, category=cat, confidence=0.5,
+                                                status="candidate", question=qid)) == "new"
+            s.commit()
+            print(f"{n} new candidates from {len(items)} items. Review with `ctxport memories edit`.")
+            return 0
         if a == "dedupe":
             print(f"{s.dedupe_memories()} near-duplicate memories merged")
             return 0
         if a == "coverage":
             from .extract import coverage_report, format_coverage
+            from .questionnaire import answers, format_question_coverage
             cov = coverage_report(s)
-            print(json.dumps(cov, ensure_ascii=False, indent=2) if args.json else format_coverage(cov))
+            if args.json:
+                cov["questions_answered"] = sorted(answers(s))
+                print(json.dumps(cov, ensure_ascii=False, indent=2))
+            else:
+                print(format_coverage(cov) + "\n" + format_question_coverage(s))
             return 0
         if a == "add":
             text = " ".join(args.text)
@@ -350,6 +421,12 @@ def cmd_handoff(args) -> int:
 
 def cmd_profile(args) -> int:
     from .profile import build_profile, copy_to_clipboard
+    if args.ask:
+        if sys.stdin.isatty():
+            with open_store(args) as s:
+                run_interview(s, max_questions=5, write=lambda m: info(m))
+        else:
+            info("--ask skipped: not an interactive terminal")
     llm = None
     if args.llm:
         from .llm import RemoteNotAllowed
@@ -520,6 +597,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("extract", help="extract memory candidates")
     _add_llm_flags(p)
+    p.add_argument("--questions", action="store_true",
+                   help="answer the unanswered background questions from your history (uses the LLM settings)")
+    p.add_argument("--stage", type=int, choices=[1, 2, 3], help="only this questionnaire stage")
+    p.add_argument("--redo", action="store_true", help="with --questions: ask every question again")
     p.add_argument("--platform")
     p.add_argument("--days", type=int)
     p.add_argument("--limit", type=int)
@@ -531,6 +612,9 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--candidates", action="store_true", help="include candidates")
     q.add_argument("--all", action="store_true", help="include rejected too")
     q.add_argument("--platform")
+    q = msub.add_parser("import", help="import a '## heading / - fact' list, e.g. from `ctxport prompt`")
+    q.add_argument("file")
+    q.add_argument("--platform", default="self-report", help="where the list came from, e.g. chatgpt")
     msub.add_parser("dedupe", help="merge near-duplicate memories (same category, ~80% alike)")
     q = msub.add_parser("coverage", help="which categories are empty, which conversations gave nothing")
     q.add_argument("--json", action="store_true")
@@ -592,6 +676,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("profile", help="one-page summary of your background, ready to paste into another AI")
     p.add_argument("--out", help="write to this file instead of printing")
+    p.add_argument("--ask", action="store_true", help="first answer up to 5 background questions your history misses")
     p.add_argument("--copy", action="store_true", help="also copy it to the clipboard")
     p.add_argument("--topics", type=int, default=15, help="how many recent conversation titles to list (0 = none)")
     p.add_argument("--since", help="only topics from conversations updated since, e.g. 90d or 2026-01-01")
@@ -603,6 +688,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-redact", action="store_true")
     _add_llm_flags(p)
     p.set_defaults(fn=cmd_profile)
+
+    p = sub.add_parser("ask", help="answer a few background questions that your history doesn't cover")
+    p.add_argument("--stage", type=int, choices=[1, 2, 3])
+    p.add_argument("--max", type=int, default=5, help="how many questions at most (default 5)")
+    p.add_argument("--all", action="store_true", help="also ask questions that already have an answer")
+    p.add_argument("--force", action="store_true", help=argparse.SUPPRESS)
+    p.set_defaults(fn=cmd_ask)
+
+    p = sub.add_parser("prompt", help="print a prompt that makes another assistant list what it knows about you")
+    p.add_argument("--lang", choices=["zh", "en"], default="zh")
+    p.add_argument("--stage", type=int, choices=[1, 2, 3])
+    p.set_defaults(fn=cmd_prompt)
 
     p = sub.add_parser("compact", help="make the database smaller: trim tool output, merge the index, VACUUM")
     p.add_argument("--keep-tools", action="store_true", help="don't trim stored tool output, only reclaim space")

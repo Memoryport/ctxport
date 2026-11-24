@@ -106,6 +106,24 @@ reviewed anything yet, it falls back to the unreviewed candidates and tells you 
 Settings → Personalization → Custom instructions, claude.ai/import-memory or a Claude project, Gemini → Saved info,
 or simply as the first message of a new chat.
 
+### Filling the gaps: a 30-question background questionnaire
+
+Extraction only finds what you happened to say. ctxport checks your memories against 30 background questions in
+three stages (1 · who you are, 2 · what you work on and with, 3 · how you like to be helped) and fills what is
+missing, cheapest first:
+
+```bash
+ctxport memories coverage        # which questions your memories already answer, stage by stage
+ctxport extract --questions      # for each unanswered question: search YOUR messages for it, let the local LLM
+                                 # answer from those excerpts only, with citations; no citation → dropped
+ctxport ask                      # still missing? answer up to 5 short questions yourself (saved as accepted)
+ctxport prompt > ask-chatgpt.md  # or paste this into the assistant you're leaving, save its answer, then:
+ctxport memories import answer.md --platform chatgpt
+```
+
+Everything that came from a model (`--questions`, the pasted prompt) is a candidate until you tick it in
+`ctxport memories edit`. The questions never ask for ID numbers, addresses, health, politics, religion or money.
+
 ## Common migrations
 
 | Goal | Command |
@@ -132,10 +150,11 @@ or simply as the first message of a new chat.
 
 1. **Explicit memory** is accepted directly: custom instructions, CLAUDE.md / AGENTS.md / GEMINI.md, memories from platform exports, Chatbox memory.
 2. **Rules** (offline, the default) look only at your own messages, split them into sentences of 6–200 characters, skip questions, code and logs, and match patterns such as "I am a / my name is / I prefer / I use / from now on" (and their Chinese equivalents). Results are candidates (confidence 0.4).
-3. **LLM extraction** (`--llm`, optional) uses any OpenAI-compatible API; the default is a local Ollama at `http://localhost:11434/v1` with `qwen2.5:7b` (`CTXPORT_LLM_BASE_URL` / `CTXPORT_LLM_MODEL` / `CTXPORT_LLM_API_KEY`). It sends **only your messages** (secrets masked first) in chunks of about 6,000 characters. A non-localhost endpoint needs `--allow-remote`. Results are candidates (confidence 0.8). Note that `handoff --llm` is different: to summarize, it sends the earlier part of the conversation from **both sides** (also masked).
-4. Each conversation is extracted once per method, and again automatically when it changes. A fact that comes up again (even reworded: "I use VS Code" / "I use VSCode.") is merged into the existing memory, which counts how many conversations mentioned it and when it was first and last seen. Memories you see most often and most recently rank first, a reworded version of something you rejected stays rejected, and the review checklist marks an older fact as "maybe outdated" when a newer related one appears (for example a new editor). `ctxport memories dedupe` merges duplicates already in an older store; `ctxport memories coverage` shows what's still missing.
-5. **Review**: `ctxport memories edit` writes a checklist where `[x]` keeps a memory, `[ ]` rejects it, and you can rewrite the text. Rejected memories don't come back on later imports. `memories list/add/accept/reject/rm` work too.
-6. Exports contain accepted memories only (`--include-candidates` adds candidates). Every export is masked: OpenAI / Anthropic / GitHub / GitLab / Google / AWS / Slack / Stripe / Hugging Face keys, JWTs, private key blocks, `password|token|api_key = …` (also in JSON and environment variables such as `GITHUB_TOKEN=…`), `Authorization: Bearer …`, and `user:password@` in URLs. `--no-redact` turns masking off.
+3. **Rules** also catch self-descriptions that don't start the sentence the usual way ("As a teacher, …", "我平时写 Rust", "Our stack is …") and the opening of a question ("我是前端开发，怎么学 Rust？" → "我是前端开发"). Edited and regenerated branches are read too.
+4. **LLM extraction** (`--llm`, optional) uses any OpenAI-compatible API; the default is a local Ollama at `http://localhost:11434/v1` with `qwen2.5:7b` (`CTXPORT_LLM_BASE_URL` / `CTXPORT_LLM_MODEL` / `CTXPORT_LLM_API_KEY`). It sends **only your messages** (secrets masked first) in chunks of about 6,000 characters. A non-localhost endpoint needs `--allow-remote`. Assistant statements you explicitly confirmed ("so your stack is Go and Postgres?" → "yes") are included, marked as confirmed. Results are candidates (confidence 0.8). Note that `handoff --llm` is different: to summarize, it sends the earlier part of the conversation from **both sides** (also masked).
+5. Each conversation is extracted once per method, and again automatically when it changes. A fact that comes up again (even reworded: "I use VS Code" / "I use VSCode.") is merged into the existing memory, which counts how many conversations mentioned it and when it was first and last seen. Memories you see most often and most recently rank first, a reworded version of something you rejected stays rejected, and the review checklist marks an older fact as "maybe outdated" when a newer related one appears (for example a new editor). `ctxport memories dedupe` merges duplicates already in an older store; `ctxport memories coverage` shows what's still missing.
+6. **Review**: `ctxport memories edit` writes a checklist where `[x]` keeps a memory, `[ ]` rejects it, and you can rewrite the text. Rejected memories don't come back on later imports. `memories list/add/accept/reject/rm` work too.
+7. Exports contain accepted memories only (`--include-candidates` adds candidates). Every export is masked: OpenAI / Anthropic / GitHub / GitLab / Google / AWS / Slack / Stripe / Hugging Face keys, JWTs, private key blocks, `password|token|api_key = …` (also in JSON and environment variables such as `GITHUB_TOKEN=…`), `Authorization: Bearer …`, and `user:password@` in URLs. `--no-redact` turns masking off.
 
 ## MCP
 
