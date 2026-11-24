@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import shutil
 import sys
-from pathlib import Path
 from typing import Optional
 
 from .adapters._render import render_memories_md, visible

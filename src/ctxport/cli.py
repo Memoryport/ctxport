@@ -5,12 +5,11 @@ import argparse
 import json
 import os
 import sys
-import time
 from pathlib import Path
 from typing import Optional
 
 from . import __version__
-from .adapters import exporters, get_exporter, get_importer, importers
+from .adapters import exporters, get_exporter, importers
 from .adapters._render import render_message_md, render_transcript, visible
 from .adapters.base import ExportOptions
 from .models import MemoryItem

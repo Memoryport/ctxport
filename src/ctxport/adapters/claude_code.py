@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Optional
 
 from ..models import Conversation, ImportResult, Message
 from ..utils import env_path, home, iter_jsonl, parse_time, sanitize_raw, compact_json

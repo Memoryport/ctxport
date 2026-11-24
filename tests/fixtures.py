@@ -314,7 +314,7 @@ def antigravity_home(tmp: Path) -> Path:
     _w(d / "brain" / cid / "walkthrough.md", "Walkthrough text")
     _w(d / "knowledge" / "react-style" / "metadata.json", {"title": "React style", "summary": "User prefers function components."})
     _w(d / "knowledge" / "react-style" / "artifacts" / "notes.md", "Use hooks.")
-    _w(d / "annotations" / f"{cid}.pbtxt", f'title: "Todo app build"\n')
+    _w(d / "annotations" / f"{cid}.pbtxt", 'title: "Todo app build"\n')
     _w(g / "config" / "rules" / "style.md", "- Prefer TypeScript\n")
     _w(g / "AGENTS.md", "- Be brief\n")
     return g

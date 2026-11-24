@@ -20,7 +20,7 @@ classifiers = [
 
 [project.optional-dependencies]
 mcp = ["mcp>=1.2"]
-dev = ["pytest>=7"]
+dev = ["pytest>=7", "ruff>=0.5"]
 
 [project.scripts]
 ctxport = "ctxport.cli:main"
@@ -30,3 +30,11 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+# Errors only (syntax errors, undefined names, unused imports/variables); no style rules.
+select = ["E9", "F"]

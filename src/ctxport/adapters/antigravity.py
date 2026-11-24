@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..models import Conversation, ImportResult, Message
-from ..utils import has_table, home, parse_time, sqlite_copy
+from ..utils import has_table, parse_time, sqlite_copy
 from ._instruction import InstructionFileExporter, read_instruction_file
 from .base import Importer, register
 from .gemini_cli import gemini_home
