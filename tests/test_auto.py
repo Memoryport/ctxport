@@ -263,6 +263,21 @@ def test_inbox_is_picked_up_by_sync(tmp_path, paired):
     s.close()
 
 
+def test_gemini_rescrape_updates_conversation(tmp_path, paired):
+    """The extension re-sends recent Gemini chats; new messages must replace the stored copy, not duplicate it."""
+    port, token = paired
+    msgs = [{"role": "user", "text": "What is a prime?"}, {"role": "model", "text": "Two divisors."}]
+    conv = {"id": "gem1", "title": "Primes", "messages": msgs}
+    assert _post(port, "/ingest", {"platform": "gemini-web", "conversations": [conv]}, token=token)[0] == 200
+    conv["messages"] = msgs + [{"role": "user", "text": "Example?"}, {"role": "model", "text": "7"}]
+    assert _post(port, "/ingest", {"platform": "gemini-web", "conversations": [conv]}, token=token)[0] == 200
+    s = Store(tmp_path / "ctxport_home" / "ctxport.db")
+    assert [m.text for m in s.get_conversation("gemini-web:gem1").messages][-1] == "7"
+    assert len(s.get_conversation("gemini-web:gem1").messages) == 4
+    s.close()
+    assert _post(port, "/known?platform=gemini-web", token=token)[1]["known"] == {"gem1": "4"}
+
+
 @pytest.mark.skipif(not shutil.which("node"), reason="node not installed")
 def test_extension_core_in_node():
     test = Path(__file__).parent.parent / "extension" / "test" / "core.test.js"
