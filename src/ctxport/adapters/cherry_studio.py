@@ -427,4 +427,4 @@ class CherryStudioExporter(Exporter):
         text = ("You are my personal assistant. Use the following background about me (migrated with ctxport) "
                 "when it is relevant.\n你是我的个人助手，请在相关时参考以下关于我的背景信息。\n\n"
                 + render_memories_md(memories, opts.redact, heading_level=2))
-        return [OutputFile("cherry-studio/cherry-assistant-prompt.md", text, note="paste as assistant prompt")]
+        return [OutputFile("cherry-studio/cherry-assistant-prompt.md", text)]

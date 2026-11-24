@@ -131,4 +131,4 @@ class GeminiWebExporter(Exporter):
 
     def render(self, store, memories: list, opts: ExportOptions) -> list:
         text = "Remember these facts about me / 请记住这些关于我的信息：\n\n" + render_memories_plain(memories, opts.redact)
-        return [OutputFile("gemini-web/gemini-saved-info.txt", text, note="paste into Gemini Saved info")]
+        return [OutputFile("gemini-web/gemini-saved-info.txt", text)]

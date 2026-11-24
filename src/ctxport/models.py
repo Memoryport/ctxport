@@ -46,11 +46,6 @@ class Message:
         if self.text is None:
             self.text = ""
 
-    @property
-    def is_dialogue(self) -> bool:
-        """True for what a human would call 'the conversation' (no tools/reasoning/injections)."""
-        return self.kind == "message" and self.role in ("user", "assistant")
-
     def to_dict(self, include_raw: bool = True) -> dict:
         d = asdict(self)
         if not include_raw:
@@ -222,7 +217,6 @@ class OutputFile:
     content: str
     apply_path: Optional[str] = None
     managed: bool = False
-    note: str = ""
 
 
 def first_line(text: str, limit: int = 80) -> str:

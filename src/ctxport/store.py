@@ -46,7 +46,6 @@ CREATE TRIGGER IF NOT EXISTS messages_au_ins AFTER UPDATE ON messages WHEN new.k
   INSERT INTO messages_fts(rowid, text) VALUES (new.id, new.text); END;
 """
 
-DIALOGUE_KINDS = ("message",)
 # Only these kinds go into the full-text index; tool output and reasoning are searched with LIKE when asked for.
 FTS_KINDS = ("message", "artifact")
 # Tool output longer than this keeps only its first and last TOOL_KEEP characters (CTXPORT_KEEP_FULL_TOOLS=1 or

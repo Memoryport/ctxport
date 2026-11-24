@@ -478,15 +478,3 @@ def autostart_remove() -> str:
             p.unlink()
             return f"removed {p}"
     return "nothing to remove"
-
-
-def wait_until_up(port: int, timeout: float = 5.0) -> bool:
-    import urllib.request
-    end = time.time() + timeout
-    while time.time() < end:
-        try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{port}/ping", timeout=1) as r:
-                return r.status == 200
-        except Exception:
-            time.sleep(0.1)
-    return False
