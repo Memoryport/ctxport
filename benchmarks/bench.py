@@ -167,13 +167,11 @@ def bench_write(tmp: Path, n: int) -> dict:
     out = {"profile_3000_s": round(t, 3), "profile_memories": info["memories"]}
     for target in ("antigravity", "chatgpt"):
         ex = get_exporter(target)
-        files = ex.render(s, mems, ExportOptions(out_dir=tmp / "out", include_candidates=True))
-        body = "\n".join(f.content for f in files)
-        shown = [m for m in mems if m.text in body]
-        out[target] = {"files": [f.rel_path for f in files], "chars": [len(f.content) for f in files],
-                       "memories_shown": len(shown), "categories_shown": len({m.category for m in shown}),
-                       "categories_total": len(cats),
-                       "seen_weight_shown": round(sum(m.seen_count or 1 for m in shown) / total_seen, 3)}
+        for f in ex.render(s, mems, ExportOptions(out_dir=tmp / "out", include_candidates=True)):
+            shown = [m for m in mems if m.text in f.content]
+            out[f.rel_path] = {"chars": len(f.content), "memories_shown": len(shown),
+                               "categories_shown": len({m.category for m in shown}), "categories_total": len(cats),
+                               "seen_weight_shown": round(sum(m.seen_count or 1 for m in shown) / total_seen, 3)}
     s.close()
     return out
 

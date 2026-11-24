@@ -88,3 +88,37 @@ def test_a_busy_database_is_waited_for(tmp_path):
     s.upsert_memory(MemoryItem(text="I use Go", status="accepted"))
     s.commit()
     assert time.time() - t >= 5.5
+
+
+def test_more_self_descriptions_and_fewer_task_remarks():
+    from ctxport.extract import rule_candidates
+    for text, cat in [("我目前是一名大三学生", "identity"), ("我住在上海浦东", "identity"), ("我毕业于浙江大学", "work"),
+                      ("我在腾讯做前端开发", "work"), ("我现在用的是 MacBook Pro", "tooling"),
+                      ("回答我的时候请先给结论", "preference"), ("I'm based in Berlin", "identity"),
+                      ("I work on recommendation systems", "work"), ("My team uses Jira", "tooling"),
+                      ("I code mostly in Rust", "tooling"), ("I'm learning Japanese", "project")]:
+        assert [c for _, c in rule_candidates(text)] == [cat], text
+    for text in ["我用了你的方法，还是不行", "我在想要不要换工作", "我叫了外卖", "我用 Python 跑了一下，结果是 42",
+                 "I use this function in a loop and it crashes", "I use the following code:",
+                 "I'm a huge fan of your explanation"]:
+        assert rule_candidates(text) == [], text
+
+
+def test_llm_extraction_input_drops_code_and_repeats():
+    from ctxport.extract import compact_for_llm, llm_candidates
+    msg = ("我是后端工程师，下面这段报错怎么办？\n```go\nfunc main() {\n  panic(err)\n}\n```\n"
+           "Traceback (most recent call last):\n  File \"/app/a.py\", line 1, in <module>\n"
+           "  File \"/app/b.py\", line 2, in f\n  File \"/app/c.py\", line 3, in g\nValueError: x\n谢谢")
+    out = compact_for_llm(msg)
+    assert out.startswith("我是后端工程师") and "panic" not in out and "/app/b.py" not in out and out.endswith("谢谢")
+    assert "a single line with foo() stays" in compact_for_llm("a single line with foo() stays")
+
+    class Fake:
+        sent: list = []
+
+        def chat(self, messages, **kw):
+            self.sent.append(messages[-1]["content"])
+            return "[]"
+    f = Fake()
+    llm_candidates(f, ["继续", "I am a nurse", "继续", "继续"])
+    assert f.sent[0].count("继续") == 1 and "I am a nurse" in f.sent[0]

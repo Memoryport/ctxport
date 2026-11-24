@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import json
 from pathlib import Path
 
@@ -217,3 +218,20 @@ def test_memory_ids_need_exact_or_unique_prefix(tmp_path, capsys):
     assert {m.id for m in s.memories(status=("accepted",))} == {"abc1", "xyz8"}
     assert len(s.memories(status=None)) == 4
     s.close()
+
+
+def test_size_limited_exports_keep_every_category(tmp_path):
+    from ctxport.adapters import get_exporter
+    from ctxport.adapters.base import ExportOptions
+    from ctxport.models import MemoryItem
+    cats = ["identity", "work", "preference", "project", "tooling", "general"]
+    mems = [MemoryItem(text=f"{c} fact number {i} " + "x" * 60, category=c, status="accepted")
+            for c in cats for i in range(60)]
+    t0 = time.perf_counter()
+    (f,) = get_exporter("antigravity").render(None, mems, ExportOptions(out_dir=tmp_path))
+    assert time.perf_counter() - t0 < 10
+    assert len(f.content) <= 12000 and all(f"{c} fact number 0 " in f.content for c in cats)
+    assert "did not fit the size limit" in f.content
+    files = {x.rel_path: x.content for x in get_exporter("chatgpt").render(None, mems, ExportOptions(out_dir=tmp_path))}
+    ci = files["chatgpt/chatgpt-custom-instructions.txt"]
+    assert len(ci) <= 1500 and all(f"{c} fact number 0 " in ci for c in cats)

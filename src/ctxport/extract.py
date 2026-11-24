@@ -38,6 +38,14 @@ ZH_RULES = [
     (re.compile(r"^我们?(团队|公司|组)(主要|一般|平时)?(用|使用)"), "tooling"),
     (re.compile(r"^我(平时|一般|主要|经常|日常)(写|用|使用|在用)"), "tooling"),
     (re.compile(r"^我(对|在).{1,15}(是新手|不太熟|比较熟|很熟)"), "identity"),
+    # status, place, school, employer phrased other ways
+    (re.compile(r"^(我(目前|现在)是|本人是)"), "identity"),
+    (re.compile(r"^我(住在|家在|生活在|来自|在.{1,8}(生活|定居))"), "identity"),
+    (re.compile(r"^我(本科|硕士|博士|研究生)?毕业于"), "work"),
+    (re.compile(r"^我(目前|现在)?在.{2,20}(做|当|担任|负责).{1,20}"), "work"),
+    (re.compile(r"^我(现在|目前|平时)?用的是"), "tooling"),
+    (re.compile(r"^我(日常|平时|工作中?)(开发|写代码|编程|办公)(主要|一般)?(用|使用)"), "tooling"),
+    (re.compile(r"^(回答|回复)我?(的时候|时)?.{0,6}(请|要|别|不要|先)"), "preference"),
 ]
 EN_RULES = [
     (re.compile(r"^i am an? ", re.I), "identity"),
@@ -56,6 +64,15 @@ EN_RULES = [
     (re.compile(r"^i'?m (currently )?(building|working on|developing|writing|researching) ", re.I), "project"),
     (re.compile(r"^(my|our) (tech )?(stack|setup) (is|includes|uses) ", re.I), "tooling"),
     (re.compile(r"^we (mainly |mostly |usually )?use ", re.I), "tooling"),
+    (re.compile(r"^i'?m (currently )?(based|located) in ", re.I), "identity"),
+    (re.compile(r"^i live in ", re.I), "identity"),
+    (re.compile(r"^i (mainly |mostly |currently )?work on ", re.I), "work"),
+    (re.compile(r"^i (teach|lecture) ", re.I), "work"),
+    (re.compile(r"^i graduated (from|in) ", re.I), "work"),
+    (re.compile(r"^(my|our) (team|company) (mainly |mostly |usually )?uses? ", re.I), "tooling"),
+    (re.compile(r"^i (recently )?(switched|moved|migrated) to ", re.I), "tooling"),
+    (re.compile(r"^i (code|program|write code|develop) (mostly |mainly |usually )?in ", re.I), "tooling"),
+    (re.compile(r"^i'?m (currently )?learning ", re.I), "project"),
 ]
 # Sentences that look like a self-description but are about the conversation, the message or the answer:
 # "我是说…", "我是想问…", "我的问题是…", "我喜欢这个答案", "I like it", "I'm a bit confused", "I never got that error".
@@ -66,7 +83,13 @@ _NOT_A_FACT = re.compile(
     r"the (first|second|third|last|other) )"
     r"|i'?m? ?(am )?(a bit|a little|a lot|so|really|kind of|sort of|quite) "
     r"|i'?m (a bit|a little|kind of|sort of|so|really|quite) "
-    r"|i (always|never|usually) (forget|got|get|had|see|saw|did|thought|knew|seem|run into|hit)\b)", re.I)
+    r"|i (always|never|usually) (forget|got|get|had|see|saw|did|thought|knew|seem|run into|hit)\b"
+    # what you did or are doing right now, not what you are: "我用了你的方法", "我在想要不要…", "我叫了外卖",
+    # "I use this function in a loop", "I'm a huge fan of your explanation"
+    r"|我用了|我用(这个|那个|你的|你说的|上面|刚才|下面)|我用.{1,20}(跑了|试了|运行了|执行了|装不上|报错|不行)"
+    r"|我(正)?在(想|看|试|等|问|考虑|纠结|犹豫|查|调试?|改|找)|我叫(了|它|他|她)"
+    r"|(i|we) use (this|that|these|those|the following|it|your|print|a loop)\b"
+    r"|i'?m (a )?(huge|big) fan of (your|this|that|the)\b|i am an? (idiot|fool|noob|dummy)\b)", re.I)
 # Health details are never kept as memories.
 _HEALTH = re.compile(r"(过敏|糖尿病|高血压|抑郁|焦虑症|癌症|怀孕|哮喘|艾滋|HIV|allerg|diabet|depress|cancer|pregnan|"
                      r"diagnos|asthma|adhd|autis|自闭)", re.I)
@@ -190,9 +213,40 @@ Rules:
 """
 
 
+_FENCE = re.compile(r"(?s)```.*?(```|$)")
+
+
+def compact_for_llm(text: str, min_run: int = 4) -> str:
+    """A user message without what the extraction prompt never needs: fenced code, and runs of `min_run`+ lines
+    that look like code or logs (pasted stack traces, terminal output). Facts about you sit in the prose around
+    them ("我是后端，下面这段 Go 报错…"); pasted code is most of the characters and holds none."""
+    text = _FENCE.sub("[code omitted]", text or "")
+    lines = text.split("\n")
+    out, run = [], []
+    for line in lines + [None]:
+        if line is not None and line.strip() and _CODE_HINT.search(line):
+            run.append(line)
+            continue
+        if len(run) >= min_run:
+            out.append(f"[{len(run)} lines of code/log omitted]")
+        else:
+            out += run
+        run = []
+        if line is not None:
+            out.append(line)
+    return "\n".join(out).strip()
+
+
 def llm_candidates(client: LLMClient, texts: list, chunk_chars: int = 6000) -> list:
     out = []
-    for chunk in chunks([redact(t) for t in texts], chunk_chars):
+    seen: set = set()
+    compact = []
+    for t in texts:
+        c = compact_for_llm(t)
+        if c and c not in seen:  # "继续", "continue", retries: once is enough
+            seen.add(c)
+            compact.append(c)
+    for chunk in chunks([redact(t) for t in compact], chunk_chars):
         reply = client.chat([{"role": "system", "content": SYSTEM_PROMPT},
                              {"role": "user", "content": "User messages:\n\n" + chunk}])
         for item in parse_json_array(reply):

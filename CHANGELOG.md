@@ -18,6 +18,16 @@ All notable changes to ctxport are listed here. The format follows
 - Search terms shorter than 3 characters ("前端", "索引") no longer turn the whole query into a full scan: the longer
   terms use the full-text index and the short ones filter its hits ("前端 性能优化": 27 ms instead of 70 ms, same
   results).
+- Rule extraction finds more ways of saying who you are ("我目前是…", "我住在…", "我毕业于…", "我在腾讯做前端",
+  "I'm based in…", "I work on…", "My team uses…", "I code mostly in…") and skips more remarks about the task at hand
+  ("我用了你的方法…", "我在想要不要…", "I use this function in a loop…"). On 80 held-out labelled messages F1 rose
+  from 0.61 to 0.88 (recall 0.55 → 1.00, precision 0.69 → 0.78).
+- LLM extraction leaves out fenced code and runs of code / log lines in your messages and sends repeated messages
+  once: 61% fewer characters and 54% fewer requests on synthetic history, with every embedded fact still sent.
+- Size-limited exports (Antigravity's 12,000-character rules file) keep every category's top memories, then the most
+  seen ones, instead of cutting the file after the first categories (6 of 6 categories instead of 3 of 6 on 2,000
+  synthetic memories). `export chatgpt` also writes `chatgpt-custom-instructions.txt`, fitted to the 1,500-character
+  custom-instructions field the same way. `profile --max-chars` is about 4.5x faster.
 - The database uses `synchronous=NORMAL` with its write-ahead log: commits no longer wait for the disk, which made a
   fresh import about 10% faster. A power cut can lose the last commits but cannot corrupt the database.
 
