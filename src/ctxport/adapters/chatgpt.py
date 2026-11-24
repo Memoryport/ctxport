@@ -11,7 +11,7 @@ from pathlib import Path
 from ..models import Conversation, ImportResult, MemoryItem, Message, OutputFile
 from ..utils import Bundle, compact_json, json_strings, parse_time, sanitize_raw
 from ._render import render_memories_plain
-from .base import ExportOptions, Exporter, Importer, inbox_units, is_inbox, register
+from .base import ExportOptions, Exporter, Importer, inbox_units, is_account_file, is_inbox, register
 
 CONV_FILE = r"(^|/)conversations(-\d+)?\.json$"
 
@@ -187,7 +187,7 @@ class ChatGPTImporter(Importer):
 
     def load(self, unit: Path) -> ImportResult:
         res = ImportResult()
-        if Path(unit).name == "_account.json":
+        if is_account_file(unit):
             return self._account(Path(unit))
         with Bundle(unit) as b:
             files = b.find(CONV_FILE) or ([b.names()[0]] if not b.is_zip and Path(unit).suffix == ".json" else [])

@@ -12,7 +12,7 @@ from ..models import Conversation, ImportResult, MemoryItem, Message, OutputFile
 from ..utils import Bundle, compact_json, json_strings, parse_time, sanitize_raw, text_of
 from ._instruction import parse_instruction_text
 from ._render import render_memories_plain
-from .base import ExportOptions, Exporter, Importer, inbox_units, is_inbox, register
+from .base import ExportOptions, Exporter, Importer, inbox_units, is_account_file, is_inbox, register
 
 
 def convert_message(cm: dict) -> list:
@@ -127,7 +127,7 @@ class ClaudeAIImporter(Importer):
             if isinstance(data, dict) and "chat_messages" in data:
                 res.conversations.append(convert_conversation(data))
                 return res
-            if isinstance(data, dict) and unit.name == "_account.json":
+            if isinstance(data, dict) and is_account_file(unit):
                 for p in data.get("projects") or []:
                     if p.get("prompt_template"):
                         res.memories += parse_instruction_text(p["prompt_template"], self.name,
