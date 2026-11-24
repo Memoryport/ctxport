@@ -264,8 +264,9 @@ def test_inbox_is_picked_up_by_sync(tmp_path, paired):
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node not installed")
-def test_extension_core_in_node():
-    test = Path(__file__).parent.parent / "extension" / "test" / "core.test.js"
+@pytest.mark.parametrize("name", ["core.test.js", "background.test.js"])
+def test_extension_in_node(name):
+    test = Path(__file__).parent.parent / "extension" / "test" / name
     out = subprocess.run(["node", str(test)], capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, out.stdout + out.stderr
 

@@ -37,18 +37,46 @@ async function pair(code) {
   return { ok: true };
 }
 
-async function log(platform, text) {
-  const { log } = await cfg();
-  log.push(`${new Date().toLocaleTimeString()} [${platform}] ${text}`);
-  await chrome.storage.local.set({ log: log.slice(-200) });
-  chrome.runtime.sendMessage({ type: "log-updated" }).catch(() => {});
+// `log` and `status` are read-modify-write updates of chrome.storage. Several syncs (and the content scripts'
+// progress messages) run at the same time, so the updates go through one queue; otherwise two of them read
+// the same old value and the later write drops the other's change.
+let storageQueue = Promise.resolve();
+function updateStorage(fn) {
+  const run = storageQueue.then(fn);
+  storageQueue = run.catch(() => {});
+  return run;
 }
 
-async function setStatus(platform, status) {
-  const c = await cfg();
-  c.status[platform] = Object.assign({ at: Date.now() }, status);
-  await chrome.storage.local.set({ status: c.status });
-  chrome.runtime.sendMessage({ type: "log-updated" }).catch(() => {});
+function log(platform, text) {
+  return updateStorage(async () => {
+    const { log } = await cfg();
+    log.push(`${new Date().toLocaleTimeString()} [${platform}] ${text}`);
+    await chrome.storage.local.set({ log: log.slice(-200) });
+    chrome.runtime.sendMessage({ type: "log-updated" }).catch(() => {});
+  });
+}
+
+function setStatus(platform, status) {
+  return updateStorage(async () => {
+    const c = await cfg();
+    c.status[platform] = Object.assign({ at: Date.now() }, status);
+    await chrome.storage.local.set({ status: c.status });
+    chrome.runtime.sendMessage({ type: "log-updated" }).catch(() => {});
+  });
+}
+
+const AUTO_SYNC_EVERY = 6 * 3600 * 1000;
+
+// A content script may auto-sync its site at most every 6 hours; returns {ok: true} to the one that may.
+function claimAutoSync(platform) {
+  return updateStorage(async () => {
+    if (!(platform in SITES)) return { ok: false };
+    const { lastAuto } = await chrome.storage.local.get({ lastAuto: {} });
+    if (Date.now() - (lastAuto[platform] || 0) < AUTO_SYNC_EVERY) return { ok: false };
+    lastAuto[platform] = Date.now();
+    await chrome.storage.local.set({ lastAuto });
+    return { ok: true };
+  });
 }
 
 function waitTabComplete(tabId, timeout = 45000) {
@@ -166,6 +194,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case "progress":
         await log(msg.platform, msg.text);
         return { ok: true };
+      case "claim-auto-sync":
+        return claimAutoSync(msg.platform);
       case "gemini-scrape-list":
         return geminiScrape(msg.list || [], !!msg.full);
       case "sync-all":

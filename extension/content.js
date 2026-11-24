@@ -65,16 +65,16 @@
   // Automatic incremental sync when you open the site (default on, at most every 6 hours).
   // Gemini tabs that ctxport opens for scraping carry #ctxport-scrape and must not start another sync.
   if (location.hash.includes("ctxport-scrape")) sessionStorage.setItem("ctxport-scrape-tab", "1");
-  chrome.storage.local.get({ autoSync: true, lastAuto: {} }, async (cfg) => {
+  chrome.storage.local.get({ autoSync: true }, async (cfg) => {
     if (!cfg.autoSync) return;
     if (sessionStorage.getItem("ctxport-scrape-tab")) return;
-    const last = cfg.lastAuto[platform] || 0;
-    if (Date.now() - last < 6 * 3600 * 1000) return;
     try {
       const up = await bg({ type: "ping" });
       if (!up || !up.ok || !up.authorized) return;  // receiver not running or not paired: stay quiet
-      cfg.lastAuto[platform] = Date.now();
-      chrome.storage.local.set({ lastAuto: cfg.lastAuto });
+      // The background worker checks and records the 6-hour window in one step, so two open tabs
+      // can't both start a sync or overwrite each other's timestamps.
+      const claim = await bg({ type: "claim-auto-sync", platform });
+      if (!claim || !claim.ok) return;
       await new Promise((r) => setTimeout(r, 4000));  // let the page settle
       const r = await run(false);
       bg({ type: "progress", platform, text: "auto-sync done: " + JSON.stringify(r) }).catch(() => {});
