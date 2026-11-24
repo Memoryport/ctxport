@@ -80,6 +80,8 @@ Roles: `user`, `assistant`, `system`, `tool`, `unknown`.
 ```bash
 pip install -e ".[mcp,dev]"
 pytest -q
+ruff check src tests                                   # errors only, see [tool.ruff] in pyproject.toml
+for t in extension/test/*.test.js; do node "$t"; done  # extension tests (pytest also runs them if node is installed)
 ```
 
 Commits and PRs must not contain real user data.

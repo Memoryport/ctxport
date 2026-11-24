@@ -4,7 +4,6 @@ import json
 
 import pytest
 
-from ctxport import extract
 from ctxport.extract import apply_review, parse_review, render_review, rule_candidates, run_extract
 from ctxport.llm import LLMClient, RemoteNotAllowed, parse_json_array
 from ctxport.models import Conversation, MemoryItem, Message
