@@ -340,6 +340,11 @@ def test_inbox_gzip_and_legacy_plain_files(tmp_path):
     s.close()
     assert main(["compact"]) == 0
     assert not (inbox / "cg-1.json").exists()
+    s = Store(home / "ctxport.db")
+    pipeline.sync(s, only=["chatgpt"])
+    keys = [r[0] for r in s.db.execute("SELECT key FROM sources WHERE platform='chatgpt'")]
+    assert len(keys) == 1 and keys[0].endswith("cg-1.json.gz")  # the plain file's row is gone
+    s.close()
     data = json.loads(_gz.decompress((inbox / "cg-1.json.gz").read_bytes()))
     assert data["conversation_id"] == "cg-1"
     # a fresh store re-imports the compressed copy, and only once if both copies exist
