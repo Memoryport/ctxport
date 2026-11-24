@@ -5,11 +5,11 @@ conversations.json (or sharded conversations-000.json …): list of
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from ..models import Conversation, ImportResult, MemoryItem, Message, OutputFile
-from ..utils import is_json_name, read_json_file, Bundle, compact_json, json_strings, parse_time, sanitize_raw
+from ..utils import (Bundle, compact_json, is_json_name, is_metadata_string, json_strings, parse_time, read_json_file,
+                     sanitize_raw)
 from ._render import render_memories_plain
 from .base import ExportOptions, Exporter, Importer, inbox_units, is_account_file, is_inbox, register
 
@@ -216,7 +216,7 @@ class ChatGPTImporter(Importer):
             for name in b.find(r"memor[^/]*\.json$"):
                 try:
                     for s in json_strings(b.read_json(name), 6):
-                        if len(s) <= 2000:
+                        if len(s) <= 2000 and not is_metadata_string(s):
                             res.memories.append(MemoryItem(text=s, platform=self.name, category="platform_memory",
                                                            status="accepted", source_ref=name))
                 except Exception as e:

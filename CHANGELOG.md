@@ -6,6 +6,17 @@ All notable changes to ctxport are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Importing an older copy of a conversation (an official export downloaded before the browser extension synced newer
+  messages) no longer replaces the newer one. The stored copy is kept with a warning; `--force` overwrites on purpose.
+- Sentences holding a secret or a personal identifier (API keys, passwords, ID card, phone and card numbers) are never
+  turned into memories, by rules, the LLM, `extract --questions` or `memories import`. Such candidates left by older
+  versions are removed on the next `extract` or `memories edit`. The review checklist masks secrets and is written
+  with 0600 permissions.
+- Claude memory: only the memory text is imported. Account / memory ids, timestamps and bold sub-headings
+  ("**Work context**") no longer become accepted memories, and project memories keep their project's scope. Database
+  version 4 deletes such entries imported by older versions.
+
 ### Added
 - 30-question background questionnaire in three stages (`src/ctxport/questionnaire.py`):
   `ctxport memories coverage` shows which questions are answered; `ctxport extract --questions` asks the LLM only

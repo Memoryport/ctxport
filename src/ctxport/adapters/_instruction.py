@@ -50,7 +50,8 @@ class InstructionFileExporter(Exporter):
                            managed=True, note=f"managed block for {target}")]
 
 
-_HEADING = re.compile(r"^\s{0,3}#{1,6}\s")
+# Markdown headings, and lines that are only bold text ("**Work context**"), which Claude's memory uses as headings.
+_HEADING = re.compile(r"^\s{0,3}(?:#{1,6}\s|(?:\*\*|__)[^*_]+(?:\*\*|__):?\s*$)")
 _BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?")
 
 

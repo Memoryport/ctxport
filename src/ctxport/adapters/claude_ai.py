@@ -7,9 +7,11 @@ memories.json: loosely structured; all strings are taken.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional
 
-from ..models import Conversation, ImportResult, MemoryItem, Message, OutputFile
-from ..utils import is_json_name, read_json_file, Bundle, compact_json, json_strings, parse_time, sanitize_raw, text_of
+from ..models import Conversation, ImportResult, Message, OutputFile
+from ..utils import (Bundle, compact_json, is_json_name, is_metadata_string, parse_time, read_json_file, sanitize_raw,
+                     text_of)
 from ._instruction import parse_instruction_text
 from ._render import render_memories_plain
 from .base import ExportOptions, Exporter, Importer, inbox_units, is_account_file, is_inbox, register
@@ -102,6 +104,61 @@ def convert_conversation(c: dict, platform: str = "claude-ai") -> Conversation:
     return conv.finalize()
 
 
+# Keys of Claude's memory payloads that hold the memory text. Everything else in those objects is metadata
+# (account / memory ids, timestamps) and must never become a "memory".
+_MEMORY_TEXT_KEYS = ("conversations_memory", "memory", "content", "text", "summary")
+
+
+def memory_items(data, platform: str, source_ref: str, project_names: Optional[dict] = None) -> list:
+    """Memories from Claude's memory data: the export's memories.json
+    ([{conversations_memory, project_memories: {project uuid: text}, account_uuid}]) or the /memory endpoint
+    ({memory, updated_at, uuid}). Only the memory text is read; project memories keep their project's scope."""
+    names = project_names or {}
+    out: list = []
+
+    def text(s: str, scope: str = "global") -> None:
+        if isinstance(s, str) and s.strip():
+            out.extend(parse_instruction_text(s, platform, category="platform_memory", scope=scope,
+                                              source_ref=source_ref))
+
+    def walk(o) -> None:
+        if isinstance(o, list):
+            for x in o:
+                walk(x)
+        elif isinstance(o, str):
+            if not is_metadata_string(o):
+                text(o)
+        elif isinstance(o, dict):
+            known = False
+            for k in _MEMORY_TEXT_KEYS:
+                if isinstance(o.get(k), str):
+                    text(o[k])
+                    known = True
+                elif isinstance(o.get(k), (list, dict)):
+                    walk(o[k])
+                    known = True
+            pm = o.get("project_memories")
+            if isinstance(pm, dict):
+                known = True
+                for pid, ptext in pm.items():
+                    if isinstance(ptext, str):
+                        text(ptext, f"project:{names.get(pid) or pid}")
+            elif isinstance(pm, list):
+                known = True
+                for item in pm:
+                    if isinstance(item, dict):
+                        pid = item.get("project_uuid") or item.get("uuid") or ""
+                        body = next((item[k] for k in _MEMORY_TEXT_KEYS if isinstance(item.get(k), str)), "")
+                        text(body, f"project:{names.get(pid) or item.get('project_name') or pid}")
+            if not known:  # unknown shape: take string leaves, but never ids or timestamps
+                for v in o.values():
+                    if isinstance(v, (list, dict)) or (isinstance(v, str) and not is_metadata_string(v)):
+                        walk(v)
+
+    walk(data)
+    return out
+
+
 @register
 class ClaudeAIImporter(Importer):
     name = "claude-ai"
@@ -127,15 +184,14 @@ class ClaudeAIImporter(Importer):
                 res.conversations.append(convert_conversation(data))
                 return res
             if isinstance(data, dict) and is_account_file(unit):
+                names = {p.get("uuid"): p.get("name") for p in data.get("projects") or [] if isinstance(p, dict)}
                 for p in data.get("projects") or []:
                     if p.get("prompt_template"):
                         res.memories += parse_instruction_text(p["prompt_template"], self.name,
                                                                category="custom_instructions",
                                                                scope=f"project:{p.get('name') or p.get('uuid')}",
                                                                source_ref=f"project:{p.get('uuid')}")
-                for s in json_strings(data.get("memories") or [], 6):
-                    res.memories += parse_instruction_text(s, self.name, category="platform_memory",
-                                                           source_ref="claude-ai:memory")
+                res.memories += memory_items(data.get("memories") or [], self.name, "claude-ai:memory", names)
                 return res
         with Bundle(unit) as b:
             files = b.find(r"(^|/)conversations\.json$")
@@ -152,6 +208,7 @@ class ClaudeAIImporter(Importer):
                         res.conversations.append(convert_conversation(c))
                     except Exception as e:
                         res.warnings.append(f"{name}: conversation skipped: {type(e).__name__}: {e}")
+            project_names: dict = {}
             for name in b.find(r"(^|/)projects\.json$"):
                 try:
                     projects = b.read_json(name)
@@ -160,6 +217,7 @@ class ClaudeAIImporter(Importer):
                     continue
                 for p in projects if isinstance(projects, list) else []:
                     pname = p.get("name") or p.get("uuid")
+                    project_names[p.get("uuid")] = pname
                     scope = f"project:{pname}"
                     if p.get("prompt_template"):
                         res.memories += parse_instruction_text(p["prompt_template"], self.name,
@@ -185,13 +243,7 @@ class ClaudeAIImporter(Importer):
                 except Exception as e:
                     res.warnings.append(f"{name}: {e}")
                     continue
-                for s in json_strings(data, 6):
-                    if len(s) > 400 or "\n" in s:
-                        res.memories += parse_instruction_text(s, self.name, category="platform_memory",
-                                                               source_ref=name)
-                    else:
-                        res.memories.append(MemoryItem(text=s, platform=self.name, category="platform_memory",
-                                                       status="accepted", source_ref=name))
+                res.memories += memory_items(data, self.name, name, project_names)
         return res
 
 

@@ -68,7 +68,7 @@ def trim_tool_text(text: str, keep: int = TOOL_KEEP) -> str:
 #   2. add MIGRATIONS[new_version] = SQL that upgrades a database of the previous version (ALTER TABLE ...),
 #   3. update SCHEMA so brand-new databases are created in the new layout directly.
 # Migrations run in order, each in its own transaction, the next time the store is opened.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 MIGRATIONS: dict = {
     # 2: the full-text index covers dialogue only (FTS_KINDS); the triggers are recreated by FTS_SCHEMA and the
     #    index is rebuilt once after the migration.
@@ -87,7 +87,19 @@ ALTER TABLE memories ADD COLUMN sources TEXT;
 ALTER TABLE memories ADD COLUMN question TEXT;
 UPDATE memories SET sources = json_array(source_ref) WHERE source_ref IS NOT NULL;
 """,
+    # 4: earlier versions imported ids, timestamps and bold sub-headings of ChatGPT / Claude memory files as
+    #    accepted memories ("8f2b1c3d-…", "2025-01-02T00:00:00Z", "**Work context**"); delete them.
+    4: lambda db: _drop_metadata_memories(db),
 }
+
+
+def _drop_metadata_memories(db) -> None:
+    from .utils import is_metadata_string
+    heading = re.compile(r"^(?:\*\*|__)[^*_]+(?:\*\*|__):?$")
+    for r in db.execute("SELECT id, text FROM memories WHERE category='platform_memory'").fetchall():
+        t = (r[1] or "").strip()
+        if is_metadata_string(t) or heading.match(t):
+            db.execute("DELETE FROM memories WHERE id=?", (r[0],))
 
 # An extracted candidate this similar to an existing memory of the same scope and category is merged into it
 # (or dropped, when you rejected the existing one). See models.similarity.
@@ -226,7 +238,10 @@ class Store:
                 self._rebuild_fts = True
             try:
                 self.db.execute("BEGIN")
-                for stmt in _split_sql(MIGRATIONS[target]):
+                step = MIGRATIONS[target]
+                if callable(step):
+                    step(self.db)
+                for stmt in ([] if callable(step) else _split_sql(step)):
                     if self._column_exists_for(stmt):
                         continue  # ADD COLUMN that is already there (a database stamped older than its layout)
                     self.db.execute(stmt)
@@ -278,10 +293,15 @@ class Store:
         self.db.commit()
 
     # ------------------------------------------------------------ conversations
-    def upsert_conversation(self, conv: Conversation, source_key: Optional[str] = None) -> None:
+    def upsert_conversation(self, conv: Conversation, source_key: Optional[str] = None, force: bool = False) -> bool:
+        """Store a conversation, replacing the stored copy. Returns False, and changes nothing, when the stored copy
+        is newer (an old export imported after the browser extension synced the conversation), unless `force`."""
         conv.finalize()
         cid = conv.id
         old = self.db.execute("SELECT updated_at, message_count FROM conversations WHERE id=?", (cid,)).fetchone()
+        if not force and old is not None and old["updated_at"] and conv.updated_at \
+                and old["updated_at"] > conv.updated_at + 1:
+            return False
         self.db.execute("DELETE FROM messages WHERE conversation_id=?", (cid,))
         main = conv.messages
         user_count = sum(1 for m in main if m.role == "user" and m.kind == "message")
@@ -306,6 +326,7 @@ class Store:
             " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", rows)
         if old is None or old["updated_at"] != conv.updated_at or old["message_count"] != len(main):
             self.db.execute("DELETE FROM extracted WHERE conversation_id=?", (cid,))
+        return True
 
     def commit(self) -> None:
         self.db.commit()
@@ -534,6 +555,18 @@ class Store:
                 merged += 1
         self.db.commit()
         return merged
+
+    def purge_sensitive_candidates(self) -> int:
+        """Delete unreviewed candidates that hold a secret or a personal identifier. Accepted memories (written or
+        approved by you) are left alone. Returns how many were deleted."""
+        from .redact import is_sensitive
+        ids = [r["id"] for r in self.db.execute("SELECT id, text FROM memories WHERE status='candidate'")
+               if is_sensitive(r["text"])]
+        for mid in ids:
+            self.db.execute("DELETE FROM memories WHERE id=?", (mid,))
+        if ids:
+            self.db.commit()
+        return len(ids)
 
     def resolve_memory_id(self, mid: str) -> Optional[str]:
         """Exact id, or a prefix that matches exactly one memory. None if nothing matches.

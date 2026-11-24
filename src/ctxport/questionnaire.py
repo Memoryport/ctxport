@@ -14,6 +14,8 @@ import re
 import time
 from dataclasses import dataclass
 
+from .redact import is_sensitive
+
 
 @dataclass(frozen=True)
 class Question:
@@ -192,7 +194,7 @@ def parse_answer(reply: str, valid: dict) -> list:
     for sent in re.split(r"(?<=[.。!！?？\]])\s+|\n+", reply):
         ids = [valid[c] for c in _CITE.findall(sent) if c in valid]
         text = re.sub(r"\s+([.。,，;；!！?？])", r"\1", " ".join(_CITE.sub("", sent).split())).strip(" -*•")
-        if ids and len(text) >= 4 and "UNKNOWN" not in text.upper():
+        if ids and len(text) >= 4 and "UNKNOWN" not in text.upper() and not is_sensitive(text):
             out.append((text, list(dict.fromkeys(ids))))
     return out
 
@@ -272,6 +274,6 @@ def parse_memory_list(text: str) -> list:
         b = re.match(r"^\s*(?:[-*+]|\d+[.)])\s+(.*)$", line)
         if b:
             fact = b.group(1).strip()
-            if fact and not _UNKNOWN.match(fact) and len(fact) >= 3:
+            if fact and not _UNKNOWN.match(fact) and len(fact) >= 3 and not is_sensitive(fact):
                 out.append((cat, qid, fact))
     return out

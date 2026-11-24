@@ -180,6 +180,19 @@ def sanitize_raw(obj: Any, max_str: int = 2000) -> str:
     return compact_json(walk(obj))
 
 
+_METADATA = re.compile(
+    r"^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"   # uuid
+    r"|\d{4}-\d{2}-\d{2}(?:[T ][\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?"          # ISO date / time
+    r"|[+-]?\d+(?:\.\d+)?"                                                # number
+    r"|[0-9a-f]{16,}|[A-Za-z]+[-_](?=[A-Za-z]*\d)[A-Za-z0-9]{6,}|[a-z]+_[a-z_]+)$",  # hex/prefixed id, enum
+    re.I)
+
+
+def is_metadata_string(s: str) -> bool:
+    """True for strings that are ids, timestamps, numbers or enum values rather than human-written text."""
+    return bool(_METADATA.match((s or "").strip()))
+
+
 def json_strings(obj: Any, min_len: int = 1) -> list:
     """All string leaves of a JSON value (for loosely-structured memory files)."""
     out: list = []

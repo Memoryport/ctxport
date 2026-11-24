@@ -259,8 +259,10 @@ def cmd_memories(args) -> int:
                 path.unlink()
                 print("Review file removed. Run `ctxport memories edit` again to start a new review.")
                 return 0
+            from .store import private_write_text
+            s.purge_sensitive_candidates()
             mems = s.memories(status=("accepted", "candidate"))
-            path.write_text(render_review(mems), encoding="utf-8")
+            private_write_text(path, render_review(mems))  # 0600: it lists everything ctxport knows about you
             print(f"Wrote {path} ({len(mems)} items). Edit it, then run `ctxport memories edit` again to apply.")
             return 0
     return 1
@@ -590,14 +592,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("sync", help="incrementally import every detected local source")
     p.add_argument("--only", help="comma separated platform names")
-    p.add_argument("--force", action="store_true")
+    p.add_argument("--force", action="store_true", help="re-read files that look unchanged, and replace stored conversations even when the stored copy is newer")
     p.add_argument("--extract", action="store_true", help="run rule-based memory extraction afterwards")
     p.set_defaults(fn=cmd_sync)
 
     p = sub.add_parser("import", help="import one platform (export file or local folder)")
     p.add_argument("platform")
     p.add_argument("path", nargs="?")
-    p.add_argument("--force", action="store_true")
+    p.add_argument("--force", action="store_true", help="re-read files that look unchanged, and replace stored conversations even when the stored copy is newer")
     p.set_defaults(fn=cmd_import)
 
     p = sub.add_parser("extract", help="extract memory candidates")
@@ -646,7 +648,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("migrate", help="import → extract → export in one step")
     p.add_argument("source")
     p.add_argument("args", nargs="+", metavar="[path] target")
-    p.add_argument("--force", action="store_true")
+    p.add_argument("--force", action="store_true", help="re-read files that look unchanged, and replace stored conversations even when the stored copy is newer")
     _add_export_flags(p)
     p.set_defaults(fn=cmd_migrate)
 
