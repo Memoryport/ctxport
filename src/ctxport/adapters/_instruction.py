@@ -50,8 +50,11 @@ class InstructionFileExporter(Exporter):
                            managed=True, note=f"managed block for {target}")]
 
 
-# Markdown headings, and lines that are only bold text ("**Work context**"), which Claude's memory uses as headings.
-_HEADING = re.compile(r"^\s{0,3}(?:#{1,6}\s|(?:\*\*|__)[^*_]+(?:\*\*|__):?\s*$)")
+# Markdown headings, and lines that are only bold text ("**Work context**") or a short italic label
+# ("*Earlier context*"), which Claude's memory uses as headings and sub-headings. An italic line that reads like a
+# sentence (ends with punctuation, or is long) is kept as text.
+_HEADING = re.compile(r"^\s{0,3}(?:#{1,6}\s|(?:\*\*|__)[^*_]+(?:\*\*|__):?\s*$|"
+                      r"([*_])(?![\s*_])[^*_.!?。！？]{1,40}(?<!\s)\1:?\s*$)")
 _BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?")
 
 

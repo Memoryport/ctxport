@@ -14,7 +14,7 @@ from .adapters._render import render_message_md, render_transcript, visible
 from .adapters.base import ExportOptions
 from .models import MemoryItem
 from .redact import redact
-from .store import TOOL_KEEP, AmbiguousId, NewerDatabase, Store, default_home
+from .store import TOOL_KEEP, AmbiguousId, NewerDatabase, Store, default_home, private_write_text
 from .utils import fmt_time, parse_since, write_managed
 
 
@@ -259,7 +259,6 @@ def cmd_memories(args) -> int:
                 path.unlink()
                 print("Review file removed. Run `ctxport memories edit` again to start a new review.")
                 return 0
-            from .store import private_write_text
             s.purge_sensitive_candidates()
             mems = s.memories(status=("accepted", "candidate"))
             private_write_text(path, render_review(mems))  # 0600: it lists everything ctxport knows about you
@@ -285,7 +284,7 @@ def run_export(store: Store, target: str, opts: ExportOptions) -> list:
     for f in files:
         p = opts.out_dir / f.rel_path
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(f.content, encoding="utf-8")
+        private_write_text(p, f.content)  # 0600: exports hold your conversations and what ctxport knows about you
         written.append(str(p))
     if opts.apply:
         if not ex.appliable:
@@ -414,7 +413,7 @@ def cmd_handoff(args) -> int:
             parts.append("\n### About me\n" + "\n".join(f"- {redact(m.text)}" for m in mems[:40]))
         text = "\n".join(parts).rstrip() + "\n"
         if args.out:
-            Path(args.out).write_text(text, encoding="utf-8")
+            private_write_text(Path(args.out), text)
             info(f"handoff prompt written to {args.out}")
         else:
             print(text)
@@ -450,7 +449,6 @@ def cmd_profile(args) -> int:
              "or add facts with `ctxport memories add \"I am …\"`.")
         return 1
     if args.out:
-        from .store import private_write_text
         private_write_text(Path(args.out), text)
         info(f"profile written to {args.out}")
     copied = False
@@ -478,11 +476,11 @@ def cmd_compact(args) -> int:
         trimmed = 0 if args.keep_tools else s.trim_tool_output()
         s.compact()
         after = s.size_report()
+        from .ingest import compress_inbox
+        n, ib, ia = compress_inbox(s)
     b, a = sum(before["files"].values()), sum(after["files"].values())
     print(f"{_fmt_bytes(b)} → {_fmt_bytes(a)} (saved {_fmt_bytes(max(0, b - a))}); "
           f"{trimmed} tool outputs trimmed to their first and last {TOOL_KEEP // 1024} KB")
-    from .ingest import compress_inbox
-    n, ib, ia = compress_inbox()
     if n:
         print(f"browser-extension inbox: {n} conversation files gzip-compressed, "
               f"{_fmt_bytes(ib)} → {_fmt_bytes(ia)}")

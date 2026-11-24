@@ -58,7 +58,8 @@ def import_unit(store: Store, imp: Importer, unit: Path, force: bool, report: Sy
             report.memories_new += 1
     store.commit()
     report.imported += 1
-    report.warnings += [f"{Path(unit).name}: {w}" for w in res.warnings]
+    name = Path(unit).name
+    report.warnings += [w if w.startswith(name + ":") else f"{name}: {w}" for w in res.warnings]
     report.kept_newer += kept
     if kept:
         report.warnings.append(f"{Path(unit).name}: kept the stored copy of {kept} conversation(s) "
