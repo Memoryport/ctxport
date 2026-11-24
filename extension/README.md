@@ -26,7 +26,10 @@ Chrome / Edge（Manifest V3）。
    ctxport serve-ingest                       # 前台运行
    ctxport serve-ingest --autostart install   # 开机自动运行（macOS launchd / Linux systemd --user / Windows 启动项）
    ```
-2. Edge 打开 `edge://extensions`（Chrome 为 `chrome://extensions`）→ 打开“开发人员模式” → “加载解压缩的扩展” → 选择本仓库的 `extension/` 文件夹。
+2. 从 [最新 Release](https://github.com/Memoryport/ctxport/releases/latest) 下载 `ctxport-extension-<版本>.zip`（约 14 KB）并解压；Edge 打开 `edge://extensions`（Chrome 为 `chrome://extensions`）→ 打开“开发人员模式” → “加载解压缩的扩展” → 选择解压出的 `ctxport-extension` 文件夹（也可以直接选本仓库的 `extension/` 文件夹）。
+   Download the extension zip from the latest release, unzip it, then **Load unpacked** in `chrome://extensions` with Developer mode on.
+
+   ![install steps](https://raw.githubusercontent.com/Memoryport/ctxport/main/docs/img/install-guide.svg)
 3. 点工具栏上的 ctxport 图标，填入配对码完成配对：`serve-ingest` 首次启动时会打印配对码，也可以随时执行 `ctxport serve-ingest --pair` 获取新的配对码（10 分钟内有效，只能用一次）。配对后只有这个扩展能写入，其他扩展、网页或本机程序都无法写入。
    First time only: enter the pairing code printed by `ctxport serve-ingest --pair` in the popup.
 4. 点 **一键同步全部**。
