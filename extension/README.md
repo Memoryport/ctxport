@@ -27,14 +27,16 @@ Chrome / Edge（Manifest V3）。
    ctxport serve-ingest --autostart install   # 开机自动运行（macOS launchd / Linux systemd --user / Windows 启动项）
    ```
 2. Edge 打开 `edge://extensions`（Chrome 为 `chrome://extensions`）→ 打开“开发人员模式” → “加载解压缩的扩展” → 选择本仓库的 `extension/` 文件夹。
-3. 点工具栏上的 ctxport 图标 → **一键同步全部**。第一次连接时扩展会自动与本机服务配对（之后其他扩展或网页都无法写入）。
+3. 点工具栏上的 ctxport 图标，填入配对码完成配对：`serve-ingest` 首次启动时会打印配对码，也可以随时执行 `ctxport serve-ingest --pair` 获取新的配对码（10 分钟内有效，只能用一次）。配对后只有这个扩展能写入，其他扩展、网页或本机程序都无法写入。
+   First time only: enter the pairing code printed by `ctxport serve-ingest --pair` in the popup.
+4. 点 **一键同步全部**。
 
 之后默认 **打开这些网站时自动增量同步**（最多每 6 小时一次）；也可以设置后台定时同步。
 
 ## 隐私与条款
 
 扩展调用的是这些网站前端自己使用的接口，不是公开 API，网站改版时可能需要更新；请求之间有间隔并在 429 时退避。请只同步你自己的账号数据，并遵守各平台条款。
-`ctxport serve-ingest --reset-pairing` 可解除配对；`--autostart remove` 取消开机自启。
+`ctxport serve-ingest --reset-pairing` 可解除配对（并打印新的配对码）；`--autostart remove` 取消开机自启。
 
 ## 开发
 

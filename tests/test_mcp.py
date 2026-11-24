@@ -44,9 +44,14 @@ def test_mcp_stdio_roundtrip(tmp_path):
                 text = "".join(getattr(c, "text", "") for c in res.content)
                 assert "test:m1" in text
                 res = await session.call_tool("remember", {"fact": "Prefers dark mode", "category": "preference"})
-                assert "Saved" in "".join(getattr(c, "text", "") for c in res.content)
+                assert "candidate" in "".join(getattr(c, "text", "") for c in res.content)
                 res = await session.call_tool("get_user_memory", {})
                 mem = "".join(getattr(c, "text", "") for c in res.content)
-                assert "Prefers dark mode" in mem and "User studies math" in mem
+                # an MCP client can only suggest: the fact waits for the user's review
+                assert "User studies math" in mem and "Prefers dark mode" not in mem
 
     asyncio.run(asyncio.wait_for(run(), 60))
+    s = Store(home / "ctxport.db")
+    cands = {m.text: m.platform for m in s.memories(status=("candidate",))}
+    assert cands.get("Prefers dark mode") == "mcp"
+    s.close()

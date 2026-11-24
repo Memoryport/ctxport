@@ -73,15 +73,19 @@ def get_conversation(conversation_id: str, last_n: int = 30) -> str:
 
 
 def remember(fact: str, category: str = "general") -> str:
-    """Save a new fact about the user as an accepted memory."""
+    """Suggest a new fact about the user. It is saved as a *candidate*: it only becomes part of the user's
+    memory (and of exported CLAUDE.md / AGENTS.md files) after the user accepts it with `ctxport memories edit`."""
     fact = (fact or "").strip()
     if not fact:
         return "Nothing to remember."
+    # Never accept on the client's behalf: an MCP client may be acting on injected instructions from a web page
+    # or a document, and accepted memories are written into other tools' instruction files on export.
     with _store() as s:
-        r = s.upsert_memory(MemoryItem(text=fact, platform="mcp", category=category or "general", status="accepted",
-                                       confidence=1.0))
+        r = s.upsert_memory(MemoryItem(text=fact[:2000], platform="mcp", category=(category or "general")[:40],
+                                       status="candidate", confidence=0.9))
         s.commit()
-    return {"new": "Saved.", "updated": "Already known; marked as accepted.", "kept": "Already known."}[r]
+    return {"new": "Saved as a candidate. The user will review it (`ctxport memories edit`) before it is used.",
+            "updated": "Already known.", "kept": "Already known."}[r]
 
 
 TOOLS = [get_user_memory, search_history, list_recent_conversations, get_conversation, remember]

@@ -13,12 +13,28 @@ async function cfg() {
   return chrome.storage.local.get({ port: 8765, autoSync: true, bgSyncHours: 0, log: [], status: {} });
 }
 
+// Every request carries the token the receiver issued when this extension was paired with a one-time code.
 async function server(path, init) {
   const { port } = await cfg();
-  const res = await fetch(`http://127.0.0.1:${port}${path}`, init);
+  const { token } = await chrome.storage.local.get({ token: "" });
+  const opts = Object.assign({}, init);
+  opts.headers = Object.assign({}, opts.headers, token ? { "X-Ctxport-Token": token } : {});
+  const res = await fetch(`http://127.0.0.1:${port}${path}`, opts);
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+  if (!res.ok) {
+    const err = new Error(body.error || `HTTP ${res.status}`);
+    if (body.need_pairing) err.needPairing = true;
+    throw err;
+  }
   return body;
+}
+
+async function pair(code) {
+  const r = await server("/pair", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: String(code || "").trim() }) });
+  if (!r.token) throw new Error("pairing failed");
+  await chrome.storage.local.set({ token: r.token });
+  return { ok: true };
 }
 
 async function log(platform, text) {
@@ -140,6 +156,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     switch (msg && msg.type) {
       case "ping":
         try { return await server("/ping"); } catch (e) { return { ok: false, error: e.message }; }
+      case "pair":
+        if (sender.tab) return { ok: false, error: "pairing is only possible from the popup" };
+        try { return await pair(msg.code); } catch (e) { return { ok: false, error: e.message }; }
       case "known":
         return server(`/known?platform=${encodeURIComponent(msg.platform)}`);
       case "ingest":
@@ -166,7 +185,7 @@ async function scheduleAlarm() {
 }
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name !== "ctxport-sync") return;
-  server("/ping").then(() => syncAll(false)).catch(() => {});
+  server("/ping").then((r) => { if (r.authorized) return syncAll(false); }).catch(() => {});
 });
 chrome.runtime.onInstalled.addListener(scheduleAlarm);
 chrome.runtime.onStartup.addListener(scheduleAlarm);
