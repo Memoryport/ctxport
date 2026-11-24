@@ -16,6 +16,20 @@ All notable changes to ctxport are listed here. The format follows
 - Claude memory: only the memory text is imported. Account / memory ids, timestamps and bold sub-headings
   ("**Work context**") no longer become accepted memories, and project memories keep their project's scope. Database
   version 4 deletes such entries imported by older versions.
+- Masking also covers Chinese mobile, ID card (checksum-verified) and card numbers (Luhn-verified), Alibaba / Tencent
+  Cloud access key ids, `password hunter2` without "is", and `token 是 …`.
+- The extension receiver marks a conversation as known only after it is really in the store, so one whose import
+  failed (bad data, a busy database) is sent again; the store waits up to 60 s for another writer instead of failing
+  after 5 s.
+- Rule extraction skips sentences about the conversation rather than you ("我是说…", "我的问题是…", "我喜欢这个答案",
+  "I like it", "I'm a bit confused", "I never got that error") and health details, drops the request part of a
+  sentence ("我主要用 Neovim，帮我写个 Makefile" → "我主要用 Neovim"), and finds "以后…都用英文", "我在…读研究生",
+  "我在用 …" and "作为一个产品经理，…？".
+- A message you replaced by editing it is no longer extracted next to the edited version.
+- The questionnaire counts a memory of any category as an answer ("我是后端工程师" answers the role question, a
+  custom instruction "回答请用中文" the language question), so `extract --questions` no longer re-asks them.
+- Search terms are phrases: question keywords such as "I work as" no longer match "pandas … data work", and
+  `ctxport search "vector database"` searches the phrase (unquoted words still all have to appear).
 
 ### Added
 - 30-question background questionnaire in three stages (`src/ctxport/questionnaire.py`):

@@ -28,6 +28,8 @@ _PATTERNS = [
     re.compile(r"\bxai-[A-Za-z0-9]{40,}"),                         # xAI
     re.compile(r"\br8_[A-Za-z0-9]{30,}"),                          # Replicate
     re.compile(r"\bdop_v1_[a-f0-9]{64}"),                          # DigitalOcean
+    re.compile(r"\bLTAI[A-Za-z0-9]{12,30}\b"),                       # Alibaba Cloud AccessKey ID
+    re.compile(r"\bAKID[A-Za-z0-9]{13,40}\b"),                       # Tencent Cloud SecretId
     re.compile(r"\beyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}"),  # JWT
 ]
 
@@ -50,8 +52,8 @@ _ASSIGN = re.compile(
 )
 # "my password is hunter2" (value must contain a digit or symbol, so "the token is valid" is left alone)
 _EN_IS = re.compile(
-    r"(?i)\b((?:password|passphrase|passcode|api[ _-]?key|secret[ _-]?key|access[ _-]?key|token)"
-    r"\s+(?:is|was|=)\s*:?\s*)([\"']?)((?!\[REDACTED\])(?=[^\s\"',;]*[0-9!@#$%^&*_\-])[^\s\"',;]{4,})\2"
+    r"(?i)\b((?:password|passwd|pwd|passphrase|passcode|api[ _-]?key|secret[ _-]?key|access[ _-]?key|token)"
+    r"\s*(?:\s(?:is|was)\s|=|：|:|是|为|\s)\s*)([\"']?)((?!\[REDACTED\])(?=[^\s\"',;]*[0-9!@#$%^&*_\-])[^\s\"',;]{4,})\2"
 )
 _ZH_ASSIGN = re.compile(r"(密码|口令|令牌|密钥|秘钥)(\s*[:：是为]\s*)(\S{4,})")
 
@@ -71,31 +73,55 @@ def redact(text: str) -> str:
     out = _ASSIGN.sub(_mask_assign, out)
     out = _EN_IS.sub(_mask_assign, out)
     out = _ZH_ASSIGN.sub(lambda m: f"{m.group(1)}{m.group(2)}{MASK}", out)
-    return out
+    return _mask_pii(out)
 
 
 def maybe(text: str, enabled: bool = True) -> str:
     return redact(text) if enabled else text
 
 
-# Personal identifiers that a memory should never hold. Unlike the secrets above they are not masked in exported
-# conversations (yet), but a sentence containing one is never turned into a memory.
-_PII = [
-    re.compile(r"(?<![\dA-Za-z])\d{6}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx](?![\dA-Za-z])"),  # CN ID
-    re.compile(r"(?<![\d+])(?:\+?86[-\s]?)?1[3-9]\d[-\s]?\d{4}[-\s]?\d{4}(?!\d)"),   # CN mobile
-    re.compile(r"(?<!\d)(?:\d[ -]?){15,18}\d(?!\d)"),                                 # card / account numbers
-]
+# Personal identifiers: masked like secrets, and a sentence holding one never becomes a memory. Card and ID numbers
+# are checked (Luhn / ID checksum), so long numbers such as nanosecond timestamps are left alone.
+_CN_ID = re.compile(r"(?<![\dA-Za-z])\d{6}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx](?![\dA-Za-z])")
+_CN_MOBILE = re.compile(r"(?<![\d+])(?:\+?86[-\s]?)?1[3-9]\d[-\s]?\d{4}[-\s]?\d{4}(?!\d)")
+_CARD = re.compile(r"(?<![\d.])\d(?:[ -]?\d){14,18}(?![\d.])")
+_ID_WEIGHTS = (7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2)
+
+
+def _cn_id_ok(s: str) -> bool:
+    total = sum(int(c) * w for c, w in zip(s[:17], _ID_WEIGHTS))
+    return "10X98765432"[total % 11] == s[17].upper()
+
+
+def _luhn_ok(s: str) -> bool:
+    digits = [int(c) for c in s if c.isdigit()]
+    total = 0
+    for i, d in enumerate(reversed(digits)):
+        if i % 2:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+    return total % 10 == 0
+
+
+def _mask_pii(text: str) -> str:
+    text = _CN_ID.sub(lambda m: MASK if _cn_id_ok(m.group(0)) else m.group(0), text)
+    text = _CARD.sub(lambda m: MASK if _luhn_ok(m.group(0)) else m.group(0), text)
+    return _CN_MOBILE.sub(MASK, text)
+
+
 _SENSITIVE_WORDS = re.compile(
     r"(?i)(密码|口令|密钥|秘钥|私钥|令牌|验证码|身份证|护照|银行卡|信用卡|卡号|社保号|"
-    r"\bpassword\b|\bpasswd\b|\bpassphrase\b|\bapi[ _-]?key\b|\bsecret\b|\bprivate key\b|\btoken\b|"
+    r"\bpassword\b|\bpasswd\b|\bpassphrase\b|\bapi[ _-]?key\b|\bprivate key\b|"
     r"\bssn\b|social security|passport|credit card|\biban\b)")
 
 
 def is_sensitive(text: str) -> bool:
-    """True when `text` holds a secret, a credential-like word, or a personal identifier. Used to keep such
-    sentences out of memories (extraction, questionnaire answers, imported lists)."""
+    """True when `text` holds a secret, a personal identifier (both masked by redact), or a credential-like word.
+    Used to keep such sentences out of memories (extraction, questionnaire answers, imported lists)."""
     if not text:
         return False
     if redact(text) != text:
         return True
-    return bool(_SENSITIVE_WORDS.search(text) or any(rx.search(text) for rx in _PII))
+    return bool(_SENSITIVE_WORDS.search(text))

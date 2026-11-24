@@ -362,8 +362,8 @@ def cmd_show(args) -> int:
 
 def cmd_search(args) -> int:
     with open_store(args) as s:
-        q = " ".join(args.query)
-        rows = s.search(q, platform=args.platform, limit=args.limit, include_tools=args.include_tools)
+        # each argument is one term, so a quoted "vector database" is searched as a phrase
+        rows = s.search(args.query, platform=args.platform, limit=args.limit, include_tools=args.include_tools)
         for r in rows:
             t = redact(r["text"] or "")
             i = max(0, min([t.lower().find(w.lower()) for w in args.query if t.lower().find(w.lower()) >= 0] or [0]) - 60)

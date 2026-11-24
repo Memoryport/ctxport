@@ -33,6 +33,13 @@ def test_branches_and_confirmed_summaries():
         Message(role="user", text="yes"),
     ], branches=[[Message(role="user", text="I mainly use Go for services.")]])
     assert "I mainly use Go for services." in user_texts(conv)
+    # an edited message: the version you replaced is not read
+    edited = Conversation(platform="chatgpt", native_id="e", messages=[
+        Message(role="user", text="我在腾讯工作", id="n2", parent_id="n1")],
+        branches=[[Message(role="user", text="我在字节跳动工作", id="old", parent_id="n1"),
+                   Message(role="assistant", text="好的", id="a", parent_id="old"),
+                   Message(role="user", text="我用 Go 写服务", id="f", parent_id="a")]])
+    assert user_texts(edited) == ["我在腾讯工作", "我用 Go 写服务"]
     (c,) = confirmed_summaries(conv)
     assert "Go and Postgres" in c and c.startswith("[An assistant said this and I confirmed it]")
 
