@@ -89,6 +89,7 @@ ctxport platforms                 # 支持的平台、本机检测结果、导�
 ctxport sync --extract            # 增量导入所有本地来源，并用规则提取候选记忆
 ctxport import chatgpt ~/Downloads/chatgpt-export.zip
 ctxport stats                     # 每个平台的对话数、消息数、时间范围、常用模型
+ctxport stats --size              # 磁盘占用；`ctxport compact` 可以压缩数据库
 ctxport memories edit             # 生成 ctxport-memories.md 勾选清单；改完再运行一次写回
 ctxport profile --copy            # 一页“我的背景”，复制后可粘贴到任何 AI
 ctxport export claude-code        # 预览到 ./ctxport-out/
@@ -133,6 +134,7 @@ ctxport profile --max-chars 1500 --topics 0   # 适合 ChatGPT 自定义指令�
 * 附件不复制二进制，只记文件名、MIME、大小、路径/资源 key。
 * 时间兼容秒/毫秒/微秒与 ISO-8601（含 `Z`、7 位小数）。重新导入整体替换不重复；按 `mtime+size` 签名增量跳过，`--force` 强制重导。
 * `--keep-raw` 额外保存每条消息的原始 JSON（去掉二进制和加密签名），数据库会变大约 2–3 倍。
+* **占用空间小。** 很长的工具输出（日志、文件内容）只保留开头和结尾各 2 KB（`--keep-full-tools` 保留全文），全文索引只收录真实对话。在一个编程助手的样例上，数据库从 274 MB 降到 30 MB。`ctxport stats --size` 显示空间花在哪里；`ctxport compact` 会截短旧版本存下的工具输出并回收空闲空间（同一样例 126 MB → 29 MB）。
 
 ## 记忆提取原理
 

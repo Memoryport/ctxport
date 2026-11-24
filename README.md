@@ -94,6 +94,7 @@ ctxport platforms                    # supported platforms, what's detected here
 ctxport sync --extract               # import every local source incrementally and extract memory candidates
 ctxport import chatgpt ~/Downloads/chatgpt-export.zip
 ctxport stats                        # conversations, messages, time range and models per platform
+ctxport stats --size                 # disk usage; `ctxport compact` shrinks the database
 ctxport memories edit                # writes a ctxport-memories.md checklist; edit it, then run again to apply
 ctxport profile --copy               # one-page summary of your background, ready to paste into any AI
 ctxport export claude-code           # preview into ./ctxport-out/
@@ -144,6 +145,7 @@ or simply as the first message of a new chat.
 * Attachments aren't copied; only file name, MIME type, size and path or resource key are kept.
 * Timestamps in seconds, milliseconds, microseconds and ISO-8601 (including `Z` and 7 fractional digits) are understood. Re-importing replaces a conversation instead of duplicating it; unchanged files are skipped by an `mtime+size` signature, and `--force` re-imports anyway.
 * `--keep-raw` also stores each message's raw JSON (without binaries or encrypted signatures). The database gets about 2–3× bigger.
+* **Small on disk.** Long tool outputs (logs, file dumps) keep only their first and last 2 KB (`--keep-full-tools` keeps them whole), and the full-text index covers your dialogue only. On a coding-assistant sample this took the database from 274 MB to 30 MB. `ctxport stats --size` shows what takes the space, and `ctxport compact` trims databases made by older versions and gives free space back (126 MB → 29 MB on the same sample).
 
 ## How memory extraction works
 

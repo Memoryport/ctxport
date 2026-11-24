@@ -7,6 +7,13 @@ All notable changes to ctxport are listed here. The format follows
 ## [Unreleased]
 
 ### Added
+- Smaller databases: long tool outputs keep their first and last 2 KB (`--keep-full-tools` keeps them whole) and
+  the full-text index covers dialogue only (database version 2; the index is rebuilt once on upgrade). A
+  coding-assistant sample went from 274 MB to 30 MB.
+- `ctxport compact` trims tool output stored by older versions, merges the search index and runs VACUUM;
+  `ctxport stats --size` shows disk usage per platform; `sync` suggests `compact` when it would help.
+- Coverage report after `extract` and in `ctxport memories coverage`: memories per category, empty categories,
+  and conversations where you wrote a lot but nothing was extracted.
 - `ctxport profile`: a one-page, paste-ready summary of your background (memories grouped by category plus recent
   conversation topics), with `--copy`, `--out`, `--max-chars`, `--since`, `--platform` and an optional
   `--llm` first-person summary. Falls back to unreviewed candidates, with a warning, when nothing is reviewed yet.

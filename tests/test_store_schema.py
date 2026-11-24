@@ -22,7 +22,7 @@ def test_unversioned_database_from_0_1_0_is_stamped_and_kept(tmp_path):
     s.db.execute("PRAGMA user_version = 0")  # what 0.1.0 left behind
     s.close()
     s = Store(db)
-    assert s.schema_version() == 1
+    assert s.schema_version() == store.SCHEMA_VERSION  # stamped as 1, then migrated
     assert [m.text for m in s.memories(status=None)] == ["Prefers tea"]
     s.close()
 
@@ -33,13 +33,15 @@ def test_migrations_run_in_order_and_keep_data(tmp_path, monkeypatch):
     s.upsert_memory(MemoryItem(text="Prefers tea", platform="chatgpt"))
     s.commit()
     s.close()
-    monkeypatch.setattr(store, "SCHEMA_VERSION", 3)
+    base = store.SCHEMA_VERSION
+    monkeypatch.setattr(store, "SCHEMA_VERSION", base + 2)
     monkeypatch.setattr(store, "MIGRATIONS", {
-        2: "ALTER TABLE memories ADD COLUMN pinned INTEGER DEFAULT 0;\nCREATE INDEX mem_pinned ON memories(pinned);",
-        3: "UPDATE memories SET pinned = 1;",
+        **store.MIGRATIONS,
+        base + 1: "ALTER TABLE memories ADD COLUMN pinned INTEGER DEFAULT 0;\nCREATE INDEX mem_pinned ON memories(pinned);",
+        base + 2: "UPDATE memories SET pinned = 1;",
     })
     s = Store(db)
-    assert s.schema_version() == 3
+    assert s.schema_version() == base + 2
     assert s.db.execute("SELECT text, pinned FROM memories").fetchall()[0][:] == ("Prefers tea", 1)
     s.close()
 
@@ -47,12 +49,14 @@ def test_migrations_run_in_order_and_keep_data(tmp_path, monkeypatch):
 def test_failed_migration_rolls_back(tmp_path, monkeypatch):
     db = tmp_path / "x.db"
     Store(db).close()
-    monkeypatch.setattr(store, "SCHEMA_VERSION", 2)
-    monkeypatch.setattr(store, "MIGRATIONS", {2: "ALTER TABLE memories ADD COLUMN a INTEGER;\nTHIS IS NOT SQL;"})
+    base = store.SCHEMA_VERSION
+    monkeypatch.setattr(store, "SCHEMA_VERSION", base + 1)
+    monkeypatch.setattr(store, "MIGRATIONS", {**store.MIGRATIONS,
+                                              base + 1: "ALTER TABLE memories ADD COLUMN a INTEGER;\nTHIS IS NOT SQL;"})
     with pytest.raises(sqlite3.OperationalError):
         Store(db)
     con = sqlite3.connect(db)
-    assert con.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert con.execute("PRAGMA user_version").fetchone()[0] == base
     assert "a" not in [r[1] for r in con.execute("PRAGMA table_info(memories)")]
     con.close()
 
