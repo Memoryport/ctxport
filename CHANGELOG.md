@@ -6,6 +6,11 @@ All notable changes to ctxport are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `ctxport profile`: a one-page, paste-ready summary of your background (memories grouped by category plus recent
+  conversation topics), with `--copy`, `--out`, `--max-chars`, `--since`, `--platform` and an optional
+  `--llm` first-person summary. Falls back to unreviewed candidates, with a warning, when nothing is reviewed yet.
+
 ### Security
 - MCP `remember()` saves memories as candidates that you must accept before they are used or exported.
 - Secret redaction covers JSON keys, environment variables, `Authorization` headers, passwords in URLs,
