@@ -1,0 +1,143 @@
+"""MCP server exposing the local ctxport store (optional dependency: `pip install ctxport[mcp]`)."""
+from __future__ import annotations
+
+import json
+import shutil
+import sys
+from pathlib import Path
+from typing import Optional
+
+from .adapters._render import render_memories_md, visible
+from .models import MemoryItem
+from .redact import redact
+from .store import Store
+from .utils import fmt_time
+
+INSTRUCTIONS = ("ctxport gives you the user's own chat history from other AI tools (ChatGPT, Claude, Codex, Gemini, "
+                "Cherry Studio, Chatbox …) and their reviewed long-term memory. Call get_user_memory first for "
+                "background; use search_history to find earlier discussions.")
+
+
+def _store() -> Store:
+    return Store()
+
+
+# ---------------------------------------------------------------- tool implementations (plain functions, testable)
+
+def get_user_memory() -> str:
+    """Return the user's accepted long-term memory (profile, preferences, projects) as Markdown."""
+    with _store() as s:
+        mems = s.memories(status=("accepted",))
+        if not mems:
+            return "No accepted memories yet. The user can review candidates with `ctxport memories edit`."
+        return render_memories_md(mems, redact=True, heading_level=2)
+
+
+def search_history(query: str, platform: Optional[str] = None, limit: int = 10) -> str:
+    """Full-text search over all imported conversations (Chinese and English). Returns matching snippets."""
+    limit = max(1, min(int(limit or 10), 50))
+    with _store() as s:
+        rows = s.search(query, platform=platform or None, limit=limit)
+        if not rows:
+            return f"No results for {query!r}."
+        out = []
+        for r in rows:
+            text = redact(r["text"] or "")
+            terms = [t for t in query.split() if t]
+            pos = min([text.lower().find(t.lower()) for t in terms if text.lower().find(t.lower()) >= 0] or [0])
+            snippet = text[max(0, pos - 150): pos + 350].replace("\n", " ")
+            out.append(f"- [{r['platform']}] {redact(r['title'] or '')} · {fmt_time(r['created_at'])} · {r['role']}\n"
+                       f"  id: {r['conversation_id']}\n  …{snippet}…")
+        return "\n".join(out)
+
+
+def list_recent_conversations(platform: Optional[str] = None, limit: int = 20) -> str:
+    """List the most recently updated conversations (id, platform, title, date, message count)."""
+    limit = max(1, min(int(limit or 20), 200))
+    with _store() as s:
+        rows = s.conversation_rows(platform=platform or None, limit=limit)
+        return "\n".join(f"- {r['id']} · {fmt_time(r['updated_at'])} · {redact(r['title'] or '')} "
+                         f"({r['message_count']} msgs)" for r in rows) or "No conversations imported yet."
+
+
+def get_conversation(conversation_id: str, last_n: int = 30) -> str:
+    """Return the last N user/assistant messages of one conversation (tools and reasoning omitted)."""
+    with _store() as s:
+        cid = s.find_conversation_id(conversation_id)
+        conv = s.get_conversation(cid) if cid else None
+        if not conv:
+            return f"Conversation {conversation_id!r} not found."
+        msgs = visible(conv.messages)[-max(1, int(last_n or 30)):]
+        head = f"# {redact(conv.title)}\n{conv.id} · {conv.project or ''} · {fmt_time(conv.created_at)}\n"
+        return head + "\n\n".join(f"[{m.role}] {redact(m.text)}" for m in msgs)
+
+
+def remember(fact: str, category: str = "general") -> str:
+    """Save a new fact about the user as an accepted memory."""
+    fact = (fact or "").strip()
+    if not fact:
+        return "Nothing to remember."
+    with _store() as s:
+        r = s.upsert_memory(MemoryItem(text=fact, platform="mcp", category=category or "general", status="accepted",
+                                       confidence=1.0))
+        s.commit()
+    return {"new": "Saved.", "updated": "Already known; marked as accepted.", "kept": "Already known."}[r]
+
+
+TOOLS = [get_user_memory, search_history, list_recent_conversations, get_conversation, remember]
+
+
+def build_server():
+    try:  # mcp 2.x
+        from mcp.server.mcpserver import MCPServer as Server  # type: ignore
+    except ImportError:
+        try:  # mcp 1.x
+            from mcp.server.fastmcp import FastMCP as Server  # type: ignore
+        except ImportError as e:
+            raise SystemExit("The MCP server needs the optional dependency: pip install 'ctxport[mcp]'") from e
+    try:
+        server = Server("ctxport", instructions=INSTRUCTIONS)
+    except TypeError:
+        server = Server("ctxport")
+    for fn in TOOLS:
+        server.tool()(fn)
+    return server
+
+
+def serve() -> None:
+    build_server().run()
+
+
+# ---------------------------------------------------------------- client configuration snippets
+
+def _command() -> tuple:
+    exe = shutil.which("ctxport")
+    return (exe or "ctxport"), ["serve-mcp"]
+
+
+def mcp_config(client: Optional[str] = None) -> str:
+    cmd, args = _command()
+    j = json.dumps({"mcpServers": {"ctxport": {"command": cmd, "args": args}}}, indent=2)
+    blocks = {
+        "claude-desktop": ("Claude Desktop", "Add to claude_desktop_config.json (Settings → Developer → Edit Config):\n" + j),
+        "claude-code": ("Claude Code", f"claude mcp add --scope user ctxport -- {cmd} serve-mcp"),
+        "codex": ("Codex", f"Add to ~/.codex/config.toml:\n[mcp_servers.ctxport]\ncommand = \"{cmd}\"\nargs = [\"serve-mcp\"]"),
+        "gemini-cli": ("Gemini CLI", "Merge into ~/.gemini/settings.json:\n" + j),
+        "antigravity": ("Antigravity", "Agent panel → … → MCP Servers → Manage → View raw config (mcp_config.json), merge:\n" + j),
+        "cherry-studio": ("Cherry Studio", f"Settings → MCP → Add server → type STDIO\n  command: {cmd}\n  args: serve-mcp"),
+        "chatbox": ("Chatbox", f"Settings → MCP → Add custom server (stdio)\n  command: {cmd} serve-mcp"),
+    }
+    keys = [client] if client else list(blocks)
+    out = []
+    for k in keys:
+        if k not in blocks:
+            return f"Unknown client {k!r}. Known: {', '.join(blocks)}"
+        title, body = blocks[k]
+        out.append(f"## {title}\n{body}\n")
+    out.append("Tip: GUI apps often don't inherit your shell PATH. If `ctxport` is not found, use the absolute path"
+               f" ({shutil.which('ctxport') or sys.executable + ' -m ctxport'}).")
+    return "\n".join(out)
+
+
+if __name__ == "__main__":
+    serve()

@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+.pytest_cache/
+ctxport-out/
+*.db
+*.db-wal
+*.db-shm
+*.zip
+ctxport-memories.md
+*.ctxport.bak
+.pytest_cache/
