@@ -118,3 +118,46 @@ def test_coverage_report_finds_empty_categories_and_silent_conversations(tmp_pat
     s.close()
     assert main(["--db", str(tmp_path / "c.db"), "memories", "coverage"]) == 0
     assert "empty" in capsys.readouterr().out
+
+
+def _chat(texts) -> Conversation:
+    return Conversation(platform="chatgpt", native_id="inc", title="t", messages=[
+        Message(role="user" if i % 2 == 0 else "assistant", text=t, id=i, created_at=1000.0 + i)
+        for i, t in enumerate(texts)])
+
+
+def test_resync_rewrites_only_changed_messages(tmp_path):
+    s = Store(tmp_path / "a.db")
+    s.upsert_conversation(_chat(["我在做向量数据库", "好的，向量索引可以用 HNSW", "继续"]))
+    s.commit()
+    before = dict(s.db.execute("SELECT idx, id FROM messages").fetchall())
+    # one more exchange, and the last message edited: the first two rows stay as they are
+    s.upsert_conversation(_chat(["我在做向量数据库", "好的，向量索引可以用 HNSW", "再详细一点", "量化可以减小内存"]))
+    s.commit()
+    after = dict(s.db.execute("SELECT idx, id FROM messages").fetchall())
+    assert after[0] == before[0] and after[1] == before[1]
+    assert [m.text for m in s.get_conversation("chatgpt:inc").messages] == [
+        "我在做向量数据库", "好的，向量索引可以用 HNSW", "再详细一点", "量化可以减小内存"]
+    assert s.search("量化可以") and s.search("再详细") and not s.search("继续")
+    # a shorter copy (forced) drops the extra rows
+    s.upsert_conversation(_chat(["我在做向量数据库"]), force=True)
+    s.commit()
+    assert s.db.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 1
+    assert not s.search("向量索引")
+    s.db.execute("INSERT INTO messages_fts(messages_fts, rank) VALUES('integrity-check', 1)")
+    assert s.db.execute("SELECT message_count FROM conversations").fetchone()[0] == 1
+    s.close()
+
+
+def test_resync_unchanged_keeps_rows_and_extraction_state(tmp_path):
+    s = Store(tmp_path / "a.db")
+    c = _chat(["I am a backend engineer", "ok"])
+    s.upsert_conversation(c)
+    s.mark_extracted("chatgpt:inc", "rules")
+    s.commit()
+    ids = s.db.execute("SELECT id FROM messages ORDER BY id").fetchall()
+    s.upsert_conversation(_chat(["I am a backend engineer", "ok"]))
+    s.commit()
+    assert s.db.execute("SELECT id FROM messages ORDER BY id").fetchall() == ids
+    assert s.is_extracted("chatgpt:inc", "rules")
+    s.close()

@@ -4,5 +4,6 @@ prune tests
 prune extension
 prune docs
 prune scripts
+prune benchmarks
 prune .github
 global-exclude *.py[cod] __pycache__ *.db *.zip
