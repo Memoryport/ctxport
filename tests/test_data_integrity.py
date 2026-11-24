@@ -14,6 +14,7 @@ from ctxport.models import MemoryItem
 from ctxport.pipeline import import_path
 from ctxport.questionnaire import parse_answer, parse_memory_list
 from ctxport.redact import is_sensitive
+from ctxport import store
 from ctxport.store import Store
 
 
@@ -117,5 +118,5 @@ def test_upgrade_drops_metadata_memories_imported_by_older_versions(tmp_path):
     db.commit()
     db.close()
     s = Store(p)
-    assert s.schema_version() == 4
+    assert s.schema_version() == store.SCHEMA_VERSION
     assert [m.text for m in s.memories()] == ["Lives in Hangzhou."]

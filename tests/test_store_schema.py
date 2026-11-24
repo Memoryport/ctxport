@@ -71,3 +71,38 @@ def test_newer_database_is_refused_with_a_clear_message(tmp_path, capsys):
         Store(db)
     assert cli.main(["--db", str(db), "stats"]) == 2
     assert "newer ctxport" in capsys.readouterr().err
+
+
+def test_v4_database_gets_bigram_sizes_and_still_merges(tmp_path):
+    # a version-4 memories table: no sim_n column
+    db = tmp_path / "v4.db"
+    con = sqlite3.connect(db)
+    con.executescript(store.SCHEMA.replace(", sim_n INTEGER", ""))
+    con.execute("INSERT INTO memories(id, text, platform, category, status, scope) VALUES('a', 'I use VS Code',"
+                " 'chatgpt', 'tooling', 'candidate', 'global')")
+    con.execute("PRAGMA user_version = 4")
+    con.commit()
+    con.close()
+    s = Store(db)
+    assert s.schema_version() == store.SCHEMA_VERSION
+    assert s.db.execute("SELECT sim_n FROM memories").fetchone()[0] > 0
+    cand = MemoryItem(text="i use vscode.", platform="chatgpt", category="tooling", source_ref="c2")
+    assert s.upsert_memory(cand) == "merged"
+    s.close()
+
+
+def test_size_filter_finds_the_same_duplicates_as_a_full_scan(tmp_path):
+    from ctxport.models import similarity
+    texts = ["I use VS Code", "I use VSCode daily", "我平时用 VS Code 写代码", "用户平时用VS Code写代码", "I like tea",
+             "I like green tea a lot", "x", "我喜欢猫", "我喜欢狗", "I write Python every day at work"]
+    s = Store(tmp_path / "x.db")
+    for i, t in enumerate(texts):
+        s.db.execute("INSERT INTO memories(id, text, category, status, scope, sim_n) VALUES(?,?,?,?,?,NULL)",
+                     (f"m{i}", t, "tooling", "accepted", "global"))
+    for t in texts + ["i use vs code", "我平时用VSCode写代码", "I like tea!"]:
+        m = MemoryItem(text=t, category="tooling", status="candidate")
+        got = s.find_near_duplicate(m)
+        full = max(((similarity(t, r[1]), r[0]) for r in s.db.execute("SELECT id, text FROM memories WHERE id!=?",
+                                                                       (m.id,))), default=(0, None))
+        assert (got["id"] if got else None) == (full[1] if full[0] >= store.NEAR_DUPLICATE else None), t
+    s.close()

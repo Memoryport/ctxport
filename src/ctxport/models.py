@@ -1,6 +1,7 @@
 """Unified intermediate data model shared by every importer and exporter."""
 from __future__ import annotations
 
+import functools
 import hashlib
 import re
 import time
@@ -155,6 +156,28 @@ def similarity_key(text: str) -> str:
 
 def _grams(key: str) -> set:
     return {key[i:i + 2] for i in range(len(key) - 1)} if len(key) > 1 else {key}
+
+
+@functools.lru_cache(maxsize=1 << 16)
+def similarity_grams(text: str) -> frozenset:
+    """The character bigrams `similarity` compares (empty for text with no letters or digits). Cached: the
+    near-duplicate check compares each new memory with many stored ones."""
+    k = similarity_key(text)
+    return frozenset(_grams(k)) if k else frozenset()
+
+
+def dice(ga: frozenset, gb: frozenset) -> float:
+    if not ga or not gb:
+        return 0.0
+    if ga == gb:
+        return 1.0
+    return 2 * len(ga & gb) / (len(ga) + len(gb))
+
+
+def dice_size_bounds(n: int, threshold: float) -> tuple:
+    """Smallest and largest bigram-set size another text can have and still reach `threshold` against a text with
+    `n` bigrams: Dice <= 2*min(a, b) / (a + b), the size filter of all-pairs similarity search."""
+    return n * threshold / (2 - threshold), n * (2 - threshold) / threshold
 
 
 def similarity(a: str, b: str) -> float:
