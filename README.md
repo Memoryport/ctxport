@@ -44,13 +44,32 @@ official exports / local session files / local databases
 
 ## Install
 
-Not on PyPI yet. Install from source (Python ≥ 3.10):
+<p align="center"><img src="https://raw.githubusercontent.com/Memoryport/ctxport/main/docs/img/install-guide.svg" alt="Install in two parts. 1, command line: pipx install ctxport, ctxport sync --extract, ctxport profile --copy. 2, optional browser extension: download the zip from Releases, load it unpacked in chrome://extensions, pair it, click Sync all." width="900"></p>
+
+**1. Command line** (everyone, Python ≥ 3.10). The package is about 100 KB and has no dependencies.
 
 ```bash
-git clone https://github.com/Memoryport/ctxport && cd ctxport
-pipx install .            # or: pip install .
-pip install ".[mcp]"      # for the MCP server
+pipx install ctxport            # or: pip install ctxport   ·   uv tool install ctxport
+ctxport sync --extract          # import what's on this computer
+ctxport profile --copy          # your background, ready to paste into any AI
 ```
+
+Need the MCP server too? `pipx install "ctxport[mcp]"` (this is the only extra that adds a dependency).
+Before the first PyPI release, use `pipx install git+https://github.com/Memoryport/ctxport` instead.
+
+**2. Browser extension** (optional: only for ChatGPT, Claude.ai and Gemini on the web, which keep your chats on
+their servers).
+
+1. Download `ctxport-extension-<version>.zip` (about 14 KB) from the
+   [latest release](https://github.com/Memoryport/ctxport/releases/latest) and unzip it.
+2. Open `chrome://extensions` (or `edge://extensions`), turn on **Developer mode**, click **Load unpacked** and
+   pick the unzipped `ctxport-extension` folder.
+3. Run `ctxport serve-ingest --autostart install` once. It starts the local receiver at login and prints a pairing
+   code; type it into the extension's popup and click **Pair**.
+4. Click **Sync all**. After that, new chats sync by themselves when you open those sites.
+
+No release yet, or want the latest code? `git clone --depth 1 https://github.com/Memoryport/ctxport` and load its
+`extension/` folder in step 2.
 
 ## No manual exports
 
@@ -117,7 +136,7 @@ By default ctxport **only writes previews** to `./ctxport-out/`. Only `--apply` 
 ## MCP
 
 ```bash
-pip install ".[mcp]"
+pipx install "ctxport[mcp]"     # or: pip install "ctxport[mcp]"
 ctxport mcp-config            # prints config for Claude Desktop / Claude Code / Codex / Gemini CLI / Antigravity / Cherry Studio / Chatbox
 claude mcp add --scope user ctxport -- ctxport serve-mcp
 ```

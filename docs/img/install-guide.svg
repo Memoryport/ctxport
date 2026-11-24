@@ -1,0 +1,162 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="640" viewBox="0 0 1000 640" role="img" aria-labelledby="t d">
+  <title id="t">How to install ctxport · 如何安装 ctxport</title>
+  <desc id="d">Part 1, command line: install with pipx, run ctxport sync --extract, then ctxport profile --copy. Part 2, optional browser extension for ChatGPT, Claude.ai and Gemini web: download the extension zip from GitHub Releases, unzip it and load it in chrome://extensions with Developer mode on, pair it with the code from ctxport serve-ingest, then click Sync all.</desc>
+  <defs>
+    <style>
+      .bg{fill:#ffffff}
+      .card{fill:#f7f8fb;stroke:#e3e6ee;stroke-width:1.2}
+      .lane{font:700 17px -apple-system,"Segoe UI",system-ui,"PingFang SC","Microsoft YaHei",sans-serif;fill:#16181d}
+      .lanesub{font:400 13px -apple-system,"Segoe UI",system-ui,"PingFang SC","Microsoft YaHei",sans-serif;fill:#6b7280}
+      .h{font:700 15px -apple-system,"Segoe UI",system-ui,"PingFang SC","Microsoft YaHei",sans-serif;fill:#16181d}
+      .zh{font:400 13px -apple-system,"Segoe UI",system-ui,"PingFang SC","Microsoft YaHei",sans-serif;fill:#4b5563}
+      .note{font:400 12px -apple-system,"Segoe UI",system-ui,"PingFang SC","Microsoft YaHei",sans-serif;fill:#6b7280}
+      .num{font:700 14px -apple-system,"Segoe UI",system-ui,sans-serif;fill:#ffffff}
+      .term{fill:#1e2230}
+      .cmd{font:500 13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#e8ecf5}
+      .prompt{font:500 13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#7c9bff}
+      .out{font:400 11.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#9aa3b5}
+      .win{fill:#ffffff;stroke:#d6dae3;stroke-width:1}
+      .bar{fill:#eceff4}
+      .ui{font:400 11.5px -apple-system,"Segoe UI",system-ui,"PingFang SC","Microsoft YaHei",sans-serif;fill:#374151}
+      .uib{font:700 11.5px -apple-system,"Segoe UI",system-ui,"PingFang SC","Microsoft YaHei",sans-serif;fill:#16181d}
+      .btn{fill:#2f5bea}
+      .btnt{font:700 11.5px -apple-system,"Segoe UI",system-ui,"PingFang SC","Microsoft YaHei",sans-serif;fill:#ffffff}
+      .hl{fill:none;stroke:#f59e0b;stroke-width:2.2}
+      .arrow{stroke:#9aa3b5;stroke-width:2;fill:none}
+    </style>
+    <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#9aa3b5"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="1000" height="640" rx="16"/>
+
+  <!-- ================= Lane 1: CLI ================= -->
+  <text class="lane" x="30" y="40">1 · Command line  命令行</text>
+  <text class="lanesub" x="250" y="40">Windows · macOS · Linux, Python 3.10+ · everyone needs this part / 所有人都需要</text>
+
+  <!-- step 1 -->
+  <rect class="card" x="30" y="58" width="296" height="200" rx="12"/>
+  <circle cx="56" cy="86" r="14" fill="#2f5bea"/><text class="num" x="56" y="91" text-anchor="middle">1</text>
+  <text class="h" x="80" y="84">Install the CLI</text><text class="zh" x="80" y="102">安装命令行工具</text>
+  <rect class="term" x="46" y="118" width="264" height="74" rx="8"/>
+  <circle cx="60" cy="130" r="3.5" fill="#f87171"/><circle cx="72" cy="130" r="3.5" fill="#fbbf24"/><circle cx="84" cy="130" r="3.5" fill="#4ade80"/>
+  <text x="58" y="157"><tspan class="prompt">$ </tspan><tspan class="cmd">pipx install ctxport</tspan></text>
+  <text class="out" x="58" y="179">installed ctxport · 103 KB</text>
+  <text class="note" x="46" y="214">~100 KB download, no other packages.</text>
+  <text class="note" x="46" y="232">No pipx? Use  pip install ctxport</text>
+  <text class="note" x="46" y="250">下载约 100 KB，不依赖其他包</text>
+
+  <path class="arrow" d="M330 158 L346 158" marker-end="url(#ah)"/>
+
+  <!-- step 2 -->
+  <rect class="card" x="352" y="58" width="296" height="200" rx="12"/>
+  <circle cx="378" cy="86" r="14" fill="#2f5bea"/><text class="num" x="378" y="91" text-anchor="middle">2</text>
+  <text class="h" x="402" y="84">Import your chats</text><text class="zh" x="402" y="102">导入本机的对话</text>
+  <rect class="term" x="368" y="118" width="264" height="74" rx="8"/>
+  <circle cx="382" cy="130" r="3.5" fill="#f87171"/><circle cx="394" cy="130" r="3.5" fill="#fbbf24"/><circle cx="406" cy="130" r="3.5" fill="#4ade80"/>
+  <text x="380" y="157"><tspan class="prompt">$ </tspan><tspan class="cmd">ctxport sync --extract</tspan></text>
+  <text class="out" x="380" y="179">[codex] 214 · [claude-code] 87</text>
+  <text class="note" x="368" y="214">Finds Claude Code, Codex, Gemini CLI,</text>
+  <text class="note" x="368" y="232">Chatbox, Cherry Studio automatically.</text>
+  <text class="note" x="368" y="250">自动发现本机的 AI 工具，只读不改</text>
+
+  <path class="arrow" d="M652 158 L668 158" marker-end="url(#ah)"/>
+
+  <!-- step 3 -->
+  <rect class="card" x="674" y="58" width="296" height="200" rx="12"/>
+  <circle cx="700" cy="86" r="14" fill="#2f5bea"/><text class="num" x="700" y="91" text-anchor="middle">3</text>
+  <text class="h" x="724" y="84">Summarize your background</text><text class="zh" x="724" y="102">一键总结你的背景</text>
+  <rect class="term" x="690" y="118" width="264" height="74" rx="8"/>
+  <circle cx="704" cy="130" r="3.5" fill="#f87171"/><circle cx="716" cy="130" r="3.5" fill="#fbbf24"/><circle cx="728" cy="130" r="3.5" fill="#4ade80"/>
+  <text x="702" y="157"><tspan class="prompt">$ </tspan><tspan class="cmd">ctxport profile --copy</tspan></text>
+  <text class="out" x="702" y="179">copied to the clipboard</text>
+  <text class="note" x="690" y="214">Paste "My background" into ChatGPT,</text>
+  <text class="note" x="690" y="232">Claude or Gemini. Or export elsewhere.</text>
+  <text class="note" x="690" y="250">粘贴到任何 AI 的个性化设置里</text>
+
+  <!-- ================= Lane 2: extension ================= -->
+  <line x1="30" y1="282" x2="970" y2="282" stroke="#e3e6ee" stroke-dasharray="4 5"/>
+  <text class="lane" x="30" y="314">2 · Browser extension  浏览器扩展</text>
+  <text class="lanesub" x="335" y="314">optional · only for ChatGPT, Claude.ai, Gemini on the web / 可选，网页版才需要</text>
+
+  <!-- step A: download -->
+  <rect class="card" x="30" y="332" width="225" height="290" rx="12"/>
+  <circle cx="56" cy="360" r="14" fill="#2f5bea"/><text class="num" x="56" y="365" text-anchor="middle">A</text>
+  <text class="h" x="80" y="358">Download the zip</text><text class="zh" x="80" y="376">下载扩展压缩包</text>
+  <rect class="win" x="44" y="392" width="197" height="150" rx="7"/>
+  <path class="bar" d="M44 399a7 7 0 0 1 7-7h183a7 7 0 0 1 7 7v15H44z"/>
+  <text class="ui" x="54" y="407">github.com/…/releases</text>
+  <text class="uib" x="54" y="434">ctxport v0.1.0</text>
+  <text class="ui" x="54" y="454">Assets</text>
+  <rect x="52" y="462" width="181" height="24" rx="5" fill="#eef2ff"/>
+  <text class="ui" x="60" y="478" fill="#2f5bea" style="fill:#2f5bea">ctxport-extension-0.1.0.zip</text>
+  <rect class="hl" x="50" y="460" width="185" height="28" rx="6"/>
+  <text class="ui" x="60" y="506">ctxport-0.1.0-py3-none-any.whl</text>
+  <text class="ui" x="60" y="526">Source code (zip)</text>
+  <text class="note" x="44" y="566">From the Releases page (14 KB).</text>
+  <text class="note" x="44" y="584">Unzip it anywhere you like.</text>
+  <text class="note" x="44" y="602">在 Releases 页面下载并解压</text>
+
+  <path class="arrow" d="M258 470 L270 470" marker-end="url(#ah)"/>
+
+  <!-- step B: load unpacked -->
+  <rect class="card" x="273" y="332" width="225" height="290" rx="12"/>
+  <circle cx="299" cy="360" r="14" fill="#2f5bea"/><text class="num" x="299" y="365" text-anchor="middle">B</text>
+  <text class="h" x="323" y="358">Add to Chrome / Edge</text><text class="zh" x="323" y="376">在浏览器中加载</text>
+  <rect class="win" x="287" y="392" width="197" height="150" rx="7"/>
+  <path class="bar" d="M287 399a7 7 0 0 1 7-7h183a7 7 0 0 1 7 7v15H287z"/>
+  <text class="ui" x="297" y="407">chrome://extensions</text>
+  <text class="uib" x="297" y="436">Extensions</text>
+  <text class="ui" x="364" y="436">Developer mode</text>
+  <rect x="459" y="426" width="20" height="12" rx="6" fill="#2f5bea"/><circle cx="473" cy="432" r="4.5" fill="#fff"/>
+  <rect class="hl" x="359" y="421" width="122" height="22" rx="6"/>
+  <rect x="297" y="456" width="100" height="24" rx="5" fill="#ffffff" stroke="#2f5bea"/>
+  <text class="ui" x="305" y="472" style="fill:#2f5bea">Load unpacked</text>
+  <rect class="hl" x="294" y="453" width="106" height="30" rx="7"/>
+  <rect x="297" y="494" width="177" height="38" rx="5" fill="#f7f8fb" stroke="#e3e6ee"/>
+  <text class="uib" x="307" y="510">ctxport companion</text>
+  <text class="ui" x="307" y="525">0.1.0</text>
+  <text class="note" x="287" y="566">Turn on Developer mode, click</text>
+  <text class="note" x="287" y="584">Load unpacked, pick the folder.</text>
+  <text class="note" x="287" y="602">打开开发者模式→加载解压缩的扩展</text>
+
+  <path class="arrow" d="M501 470 L513 470" marker-end="url(#ah)"/>
+
+  <!-- step C: pair -->
+  <rect class="card" x="516" y="332" width="225" height="290" rx="12"/>
+  <circle cx="542" cy="360" r="14" fill="#2f5bea"/><text class="num" x="542" y="365" text-anchor="middle">C</text>
+  <text class="h" x="566" y="358">Pair once</text><text class="zh" x="566" y="376">配对一次</text>
+  <rect class="term" x="530" y="392" width="197" height="76" rx="8"/>
+  <text x="540" y="414"><tspan class="prompt">$ </tspan><tspan class="cmd" style="font-size:11px">ctxport serve-ingest</tspan></text>
+  <text class="cmd" x="552" y="430" style="font-size:11px">--autostart install</text>
+  <text class="out" x="540" y="454">pairing code: <tspan style="fill:#fbbf24">4F7K-9QX2</tspan></text>
+  <rect class="win" x="530" y="478" width="197" height="64" rx="7"/>
+  <text class="ui" x="540" y="496">ctxport popup</text>
+  <rect x="540" y="506" width="110" height="24" rx="5" fill="#f3f4f6" stroke="#d6dae3"/>
+  <text class="cmd" x="548" y="522" style="fill:#16181d;font-size:12px">4F7K-9QX2</text>
+  <rect class="btn" x="656" y="506" width="62" height="24" rx="5"/><text class="btnt" x="687" y="522" text-anchor="middle">Pair</text>
+  <rect class="hl" x="537" y="503" width="184" height="30" rx="6"/>
+  <text class="note" x="530" y="566">Starts the local receiver at login</text>
+  <text class="note" x="530" y="584">and prints a one-time code.</text>
+  <text class="note" x="530" y="602">开机自启接收服务，填入配对码</text>
+
+  <path class="arrow" d="M744 470 L756 470" marker-end="url(#ah)"/>
+
+  <!-- step D: sync -->
+  <rect class="card" x="759" y="332" width="211" height="290" rx="12"/>
+  <circle cx="785" cy="360" r="14" fill="#2f5bea"/><text class="num" x="785" y="365" text-anchor="middle">D</text>
+  <text class="h" x="809" y="358">Sync all</text><text class="zh" x="809" y="376">一键同步全部</text>
+  <rect class="win" x="773" y="392" width="183" height="150" rx="7"/>
+  <text class="uib" x="783" y="412">ctxport</text>
+  <circle cx="871" cy="408" r="3.5" fill="#15803d"/><text class="ui" x="879" y="412">connected</text>
+  <line x1="773" y1="421" x2="956" y2="421" stroke="#e5e7eb"/>
+  <text class="uib" x="783" y="440">ChatGPT</text><text class="ui" x="946" y="440" text-anchor="end" style="fill:#15803d">412 ✓</text>
+  <text class="uib" x="783" y="462">Claude.ai</text><text class="ui" x="946" y="462" text-anchor="end" style="fill:#15803d">138 ✓</text>
+  <text class="uib" x="783" y="484">Gemini</text><text class="ui" x="946" y="484" text-anchor="end" style="fill:#15803d">57 ✓</text>
+  <rect class="btn" x="783" y="500" width="163" height="28" rx="7"/>
+  <text class="btnt" x="864" y="518" text-anchor="middle">一键同步全部 / Sync all</text>
+  <rect class="hl" x="780" y="497" width="169" height="34" rx="8"/>
+  <text class="note" x="773" y="566">Then it syncs new chats by</text>
+  <text class="note" x="773" y="584">itself when you open the sites.</text>
+  <text class="note" x="773" y="602">之后打开网站时自动增量同步</text>
+</svg>

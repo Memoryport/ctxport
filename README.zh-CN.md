@@ -44,13 +44,27 @@ ctxport 不靠模型回忆，而是**直接解析各平台的原始数据**：
 
 ## 安装
 
-尚未发布到 PyPI，目前从源码安装（Python ≥ 3.10）：
+<p align="center"><img src="https://raw.githubusercontent.com/Memoryport/ctxport/main/docs/img/install-guide.svg" alt="安装分两部分：1 命令行：pipx install ctxport、ctxport sync --extract、ctxport profile --copy；2 可选的浏览器扩展：从 Releases 下载 zip，在 chrome://extensions 加载解压缩的扩展，配对，点一键同步全部。" width="900"></p>
+
+**1. 命令行**（所有人都需要，Python ≥ 3.10）。安装包约 100 KB，没有任何依赖。
 
 ```bash
-git clone <this repo> ctxport && cd ctxport
-pipx install .            # 或 pip install .
-pip install ".[mcp]"      # 需要 MCP Server 时
+pipx install ctxport            # 或 pip install ctxport   ·   uv tool install ctxport
+ctxport sync --extract          # 导入本机已有的对话
+ctxport profile --copy          # 生成“我的背景”，可粘贴到任何 AI
 ```
+
+需要 MCP Server 时用 `pipx install "ctxport[mcp]"`（这是唯一会额外安装依赖的选项）。
+尚未发布到 PyPI 之前，请改用 `pipx install git+https://github.com/Memoryport/ctxport`。
+
+**2. 浏览器扩展**（可选：只有 ChatGPT、Claude.ai、Gemini 网页版需要，因为它们的对话只保存在服务器上）。
+
+1. 从 [最新 Release](https://github.com/Memoryport/ctxport/releases/latest) 下载 `ctxport-extension-<版本>.zip`（约 14 KB）并解压。
+2. 打开 `chrome://extensions`（Edge 为 `edge://extensions`），打开 **开发人员模式**，点 **加载解压缩的扩展**，选择解压出来的 `ctxport-extension` 文件夹。
+3. 运行一次 `ctxport serve-ingest --autostart install`：开机自动启动本机接收服务，并打印配对码；在扩展弹窗里填入配对码，点 **配对**。
+4. 点 **一键同步全部**。之后打开这些网站时会自动增量同步。
+
+还没有 Release，或想用最新代码？`git clone --depth 1 https://github.com/Memoryport/ctxport`，第 2 步选择其中的 `extension/` 文件夹即可。
 
 ## 全自动：不用手动导出
 
@@ -117,7 +131,7 @@ ctxport search 机器学习 部署       # 中文 ≥3 字走 FTS5，2 字自动
 ## MCP
 
 ```bash
-pip install ".[mcp]"
+pipx install "ctxport[mcp]"     # 或 pip install "ctxport[mcp]"
 ctxport mcp-config            # 打印 Claude Desktop / Claude Code / Codex / Gemini CLI / Antigravity / Cherry Studio / Chatbox 的配置
 claude mcp add --scope user ctxport -- ctxport serve-mcp
 ```

@@ -6,6 +6,10 @@ All notable changes to ctxport are listed here. The format follows
 
 ## [Unreleased]
 
+### Documentation
+- Visual install guide (`docs/img/install-guide.svg`) in both READMEs, with short install steps for the CLI
+  (`pipx install ctxport`) and for the browser extension from the release zip.
+
 ### Security
 - MCP `remember()` saves memories as candidates that you must accept before they are used or exported.
 - Secret redaction covers JSON keys, environment variables, `Authorization` headers, passwords in URLs,
