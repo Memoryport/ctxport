@@ -11,7 +11,7 @@ function fmtStatus(s) {
 }
 
 async function refresh() {
-  const c = await chrome.storage.local.get({ status: {}, log: [], autoSync: true, bgSyncHours: 0, port: 8765 });
+  const c = await chrome.storage.local.get({ status: {}, log: [], autoSync: true, bgSyncHours: 0, port: 8765, concurrency: 3 });
   for (const p of ["chatgpt", "claude-ai", "gemini-web"]) {
     const [text, cls] = fmtStatus(c.status[p]);
     const el = $("st-" + p);
@@ -22,6 +22,7 @@ async function refresh() {
   $("log").scrollTop = 1e9;
   $("auto").checked = c.autoSync;
   $("hours").value = c.bgSyncHours;
+  $("conc").value = c.concurrency;
   $("port").value = c.port;
 }
 
@@ -58,6 +59,7 @@ $("sync").addEventListener("click", async () => {
   refresh();
 });
 $("auto").addEventListener("change", (e) => chrome.storage.local.set({ autoSync: e.target.checked }));
+$("conc").addEventListener("change", (e) => chrome.storage.local.set({ concurrency: Math.max(1, Math.min(8, Math.floor(+e.target.value) || 3)) }));
 $("hours").addEventListener("change", (e) => chrome.storage.local.set({ bgSyncHours: Math.max(0, +e.target.value || 0) }));
 $("port").addEventListener("change", async (e) => { await chrome.storage.local.set({ port: +e.target.value || 8765 }); ping(); });
 chrome.runtime.onMessage.addListener((m) => { if (m && m.type === "log-updated") refresh(); });

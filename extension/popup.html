@@ -55,6 +55,7 @@
     <label><input type="checkbox" id="full"> 全量重新下载（默认只同步新增和改动）</label>
     <label><input type="checkbox" id="auto"> 打开这些网站时自动同步（最多每 6 小时一次）</label>
     <label>后台定时同步每 <input type="number" id="hours" min="0" max="168"> 小时（0 = 关闭）</label>
+    <label>同时下载 <input type="number" id="conc" min="1" max="8"> 个对话（越大越快，太大可能被网站限流）</label>
     <label>本地端口 <input type="number" id="port" min="1024" max="65535"></label>
   </div>
   <div class="hint" id="hint" hidden>本地服务未运行。在终端执行 <code>ctxport serve-ingest</code>，或用 <code>ctxport serve-ingest --autostart install</code> 让它开机自启。</div>

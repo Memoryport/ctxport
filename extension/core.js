@@ -14,23 +14,72 @@
   "use strict";
 
   const BATCH = 10;
+  const DEFAULT_CONCURRENCY = 3;
+  const MAX_CONCURRENCY = 8;
 
-  async function withRetry(io, fn, what) {
+  function concurrency(io) {
+    const n = Math.floor(Number(io.concurrency) || DEFAULT_CONCURRENCY);
+    return Math.max(1, Math.min(MAX_CONCURRENCY, n));
+  }
+
+  // Shared state for one sync: when a request is rate-limited (429) every worker pauses until `gate.until`,
+  // and the number of parallel downloads (`gate.cur`) is halved; after a run of successes it grows back by one.
+  function makeGate(n) {
+    return { until: 0, cur: n, max: n, ok: 0 };
+  }
+
+  // When one request is rate-limited (429), every parallel worker pauses until `gate.until`.
+  const now = (io) => (io.now ? io.now() : Date.now());
+
+  async function waitGate(io, gate) {
+    while (gate && gate.until > now(io)) await io.sleep(Math.min(5000, gate.until - now(io)));
+  }
+
+  async function withRetry(io, fn, what, gate) {
     let wait = 2000;
     for (let attempt = 0; attempt < 6; attempt++) {
+      await waitGate(io, gate);
       try {
-        return await fn();
+        const r = await fn();
+        if (gate && ++gate.ok >= 25 && gate.cur < gate.max) { gate.cur++; gate.ok = 0; }
+        return r;
       } catch (e) {
         const status = e && e.status;
         if (status === 401 || status === 403) throw e;
         if (status === 404) return null;
         if (attempt === 5) throw e;
-        io.log(`${what}: ${status || e.message || e} — retry in ${Math.round(wait / 1000)}s`);
-        await io.sleep(status === 429 ? Math.max(wait, 30000) : wait);
+        const retryAfter = Number(e && e.retryAfter) > 0 ? Number(e.retryAfter) * 1000 : 0;
+        const pause = status === 429 ? Math.max(wait, 30000, retryAfter) : wait;
+        if (status === 429 && gate) {
+          gate.until = Math.max(gate.until, now(io) + pause);
+          if (gate.cur > 1) {
+            gate.cur = Math.max(1, Math.floor(gate.cur / 2));
+            io.log(`rate-limited: slowing down to ${gate.cur} parallel download(s)`);
+          }
+          gate.ok = 0;
+        }
+        io.log(`${what}: ${status || e.message || e} — retry in ${Math.round(pause / 1000)}s`);
+        await io.sleep(pause);
         wait *= 2;
       }
     }
     return null;
+  }
+
+  // Run `fn` over `items` with at most `n` in flight (or fewer while `gate.cur` is lowered after a 429).
+  async function pool(items, n, fn, gate, io) {
+    let next = 0;
+    const worker = async (_, w) => {
+      while (next < items.length) {
+        if (gate && w >= gate.cur) {  // this worker is parked until the limit grows again
+          await (io ? io.sleep(1000) : new Promise((r) => setTimeout(r, 1000)));
+          continue;
+        }
+        const i = next++;
+        await fn(items[i], i);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(n, items.length) }, worker));
   }
 
   async function flush(io, platform, buf, extra) {
@@ -44,18 +93,35 @@
     const session = await io.getJSON("/api/auth/session");
     if (!session || !session.accessToken) throw Object.assign(new Error("not logged in to ChatGPT"), { status: 401 });
     const H = { Authorization: "Bearer " + session.accessToken };
-    const get = (u) => withRetry(io, () => io.getJSON(u, H), u.split("?")[0]);
+    const N = concurrency(io);
+    const gate = makeGate(N);
+    const get = (u) => withRetry(io, () => io.getJSON(u, H), u.split("?")[0], gate);
     const known = (await io.known()) || {};
 
     const items = new Map();
     for (const archived of [false, true]) {
-      for (let offset = 0; ; offset += 100) {
-        const page = await get(`/backend-api/conversations?offset=${offset}&limit=100&order=updated${archived ? "&is_archived=true" : ""}`);
-        const list = (page && page.items) || [];
-        for (const it of list) items.set(it.id, Object.assign({ _archived: archived }, it));
-        io.log(`ChatGPT: listed ${items.size} conversations…`);
-        if (list.length < 100 || (page.total != null && offset + 100 >= page.total)) break;
-        await io.sleep(300);
+      const url = (offset) => `/backend-api/conversations?offset=${offset}&limit=100&order=updated${archived ? "&is_archived=true" : ""}`;
+      const add = (page) => {
+        for (const it of (page && page.items) || []) items.set(it.id, Object.assign({ _archived: archived }, it));
+      };
+      // The `total` in these responses is not reliable (on a real account it stopped a sync at ~200 of 2,200+
+      // conversations), so never use it to decide where the list ends: fetch pages in parallel waves and stop
+      // only when a page comes back with fewer than 100 items.
+      let reported = null;
+      for (let offset = 0, more = true; more; ) {
+        const offs = Array.from({ length: Math.max(1, gate.cur) }, (_, k) => offset + k * 100);
+        const pages = await Promise.all(offs.map((o) => get(url(o))));
+        for (const p of pages) {
+          add(p);
+          if (p && p.total != null) reported = Math.max(reported || 0, p.total);
+        }
+        more = pages.every((p) => ((p && p.items) || []).length === 100);
+        offset += offs.length * 100;
+        io.log(`ChatGPT: listed ${items.size} ${archived ? "archived " : ""}conversations…`);
+        if (more) await io.sleep(300);
+      }
+      if (reported != null && reported !== items.size && !archived) {
+        io.log(`ChatGPT: server reported total=${reported}, listed ${items.size} (the list walk is authoritative)`);
       }
     }
     // conversations inside ChatGPT Projects are not always in the main list
@@ -77,10 +143,10 @@
     }
 
     const todo = [...items.values()].filter((it) => io.full || known[it.id] !== String(it.update_time));
-    io.log(`ChatGPT: ${items.size} total, ${todo.length} new or changed`);
+    io.log(`ChatGPT: ${items.size} total, ${todo.length} new or changed, downloading ${N} at a time`);
     const buf = [];
     let done = 0, sent = 0;
-    for (const it of todo) {
+    await pool(todo, N, async (it) => {
       const conv = await get(`/backend-api/conversation/${it.id}`);
       done++;
       if (conv) {
@@ -91,9 +157,9 @@
         buf.push(conv);
       }
       if (buf.length >= BATCH) { const r = await flush(io, "chatgpt", buf); sent += r.conversations || 0; }
-      if (done % 5 === 0) io.log(`ChatGPT: ${done}/${todo.length}`);
-      await io.sleep(400);
-    }
+      if (done % 10 === 0) io.log(`ChatGPT: ${done}/${todo.length}`);
+      await io.sleep(150);
+    }, gate, io);
     const extra = {};
     try { const m = await get("/backend-api/memories?include_memory_entries=true"); if (m) extra.memories = m.memories || m.items || []; } catch (e) { /* optional */ }
     try { const ci = await get("/backend-api/user_system_messages"); if (ci) extra.custom_instructions = ci; } catch (e) { /* optional */ }
@@ -104,7 +170,9 @@
 
   // ------------------------------------------------------------------ Claude.ai
   async function syncClaude(io) {
-    const get = (u) => withRetry(io, () => io.getJSON(u), u.split("?")[0]);
+    const N = concurrency(io);
+    const gate = makeGate(N);
+    const get = (u) => withRetry(io, () => io.getJSON(u), u.split("?")[0], gate);
     const orgs = await get("/api/organizations");
     if (!Array.isArray(orgs) || !orgs.length) throw Object.assign(new Error("not logged in to Claude.ai"), { status: 401 });
     const chatOrgs = orgs.filter((o) => !o.capabilities || o.capabilities.includes("chat"));
@@ -126,7 +194,7 @@
       const todo = [...seen.values()].filter((c) => io.full || known[c.uuid] !== String(c.updated_at));
       io.log(`Claude (${org.name || org.uuid}): ${seen.size} total, ${todo.length} new or changed`);
       const buf = [];
-      for (const c of todo) {
+      await pool(todo, N, async (c) => {
         const conv = await get(`${base}/chat_conversations/${c.uuid}?tree=True&rendering_mode=messages&render_all_tools=true`);
         done++;
         if (conv) {
@@ -135,9 +203,9 @@
           buf.push(conv);
         }
         if (buf.length >= BATCH) { const r = await flush(io, "claude-ai", buf); sent += r.conversations || 0; }
-        if (done % 5 === 0) io.log(`Claude: ${done}/${todo.length}`);
-        await io.sleep(400);
-      }
+        if (done % 10 === 0) io.log(`Claude: ${done}/${todo.length}`);
+        await io.sleep(150);
+      }, gate, io);
       const extra = {};
       try {
         const projects = await get(`${base}/projects`);
@@ -230,5 +298,5 @@
   }
 
   root.CtxportCore = { syncChatGPT, syncClaude, scrapeGeminiConversation, listGeminiConversations, geminiTodo,
-    GEMINI_RECENT_REFRESH, withRetry };
+    GEMINI_RECENT_REFRESH, withRetry, pool, concurrency, makeGate, DEFAULT_CONCURRENCY };
 })(typeof globalThis !== "undefined" ? globalThis : this);

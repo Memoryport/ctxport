@@ -7,6 +7,12 @@
     : /claude\.ai/.test(host) ? "claude-ai"
     : /gemini\.google\.com/.test(host) ? "gemini-web" : null;
   if (!platform) return;
+  // The background may inject this script into a tab that was open before the extension loaded;
+  // never register the listeners twice in one page.
+  // After the extension is reloaded, the old copy is still in the page but disconnected (chrome.runtime.id is
+  // gone), so only a copy that is still connected counts.
+  if (typeof globalThis.__ctxportAlive === "function" && globalThis.__ctxportAlive()) return;
+  globalThis.__ctxportAlive = () => { try { return !!chrome.runtime.id; } catch (e) { return false; } };
   let running = false;
 
   function bg(msg) {
@@ -19,16 +25,20 @@
     });
   }
 
-  function makeIO(full) {
+  function makeIO(full, concurrency) {
     return {
       full,
+      concurrency,
       sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
       log: (text) => bg({ type: "progress", platform, text }).catch(() => {}),
       known: async () => (await bg({ type: "known", platform })).known,
       push: (payload) => bg({ type: "ingest", payload }),
       getJSON: async (url, headers) => {
         const res = await fetch(url, { credentials: "include", headers: Object.assign({ Accept: "application/json" }, headers || {}) });
-        if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status });
+        if (!res.ok) {
+          throw Object.assign(new Error(`HTTP ${res.status}`),
+            { status: res.status, retryAfter: Number(res.headers.get("retry-after")) || 0 });
+        }
         return res.json();
       },
     };
@@ -38,8 +48,9 @@
     if (running) return { busy: true };
     running = true;
     try {
-      if (platform === "chatgpt") return await Core.syncChatGPT(makeIO(full));
-      if (platform === "claude-ai") return await Core.syncClaude(makeIO(full));
+      const { concurrency } = await chrome.storage.local.get({ concurrency: Core.DEFAULT_CONCURRENCY });
+      if (platform === "chatgpt") return await Core.syncChatGPT(makeIO(full, concurrency));
+      if (platform === "claude-ai") return await Core.syncClaude(makeIO(full, concurrency));
       // Gemini: list here, scrape each conversation in a background tab (done by background.js)
       const list = await Core.listGeminiConversations(document, {});
       return await bg({ type: "gemini-scrape-list", list, full });
@@ -49,6 +60,10 @@
   }
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg && msg.type === "ctxport-hello") {
+      sendResponse({ ok: true, platform });
+      return false;
+    }
     if (msg && msg.type === "sync" && msg.platform === platform) {
       run(!!msg.full).then((r) => sendResponse({ ok: true, result: r }))
         .catch((e) => sendResponse({ ok: false, error: String(e.message || e), status: e.status }));

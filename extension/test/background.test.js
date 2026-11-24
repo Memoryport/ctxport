@@ -55,7 +55,24 @@ async function testClaimAutoSync() {
   assert.ok(!(await ctx.claimAutoSync("evil")).ok);
 }
 
+async function testSyncAllRunsSitesTogether() {
+  const { ctx } = load();
+  let active = 0, peak = 0;
+  ctx.syncSite = async (p) => {  // stand-in for one site's sync
+    active++; peak = Math.max(peak, active);
+    await new Promise((r) => setTimeout(r, 20));
+    active--;
+    if (p === "gemini-web") throw new Error("layout changed");
+    return { platform: p, imported: 1 };
+  };
+  const out = JSON.parse(JSON.stringify(await ctx.syncAll(false)));
+  assert.strictEqual(peak, 3, "all three sites sync at the same time");
+  assert.deepStrictEqual(out.map((r) => r.platform), ["chatgpt", "claude-ai", "gemini-web"]);
+  assert.ok(/layout changed/.test(out[2].error), "one site failing does not stop the others");
+}
+
 (async () => {
+  await testSyncAllRunsSitesTogether();
   await testConcurrentLogAndStatus();
   await testClaimAutoSync();
   console.log("extension background tests passed");

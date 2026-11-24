@@ -144,7 +144,96 @@ async function testGemini() {
   assert.deepStrictEqual(JSON.parse(JSON.stringify(list.map((x) => x.id))), ["abc123def", "zzz999yyy"]);
 }
 
+async function testParallel() {
+  // pool keeps at most n tasks in flight and runs every item once
+  let inFlight = 0, peak = 0;
+  const seen = [];
+  await Core.pool([1, 2, 3, 4, 5, 6, 7], 3, async (x) => {
+    inFlight++; peak = Math.max(peak, inFlight);
+    await new Promise((r) => setTimeout(r, 5));
+    seen.push(x); inFlight--;
+  });
+  assert.strictEqual(peak, 3);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(seen.sort())), [1, 2, 3, 4, 5, 6, 7]);
+  assert.strictEqual(Core.concurrency({}), Core.DEFAULT_CONCURRENCY);
+  assert.strictEqual(Core.concurrency({ concurrency: 99 }), 8);
+  assert.strictEqual(Core.concurrency({ concurrency: 0 }), Core.DEFAULT_CONCURRENCY);
+
+  // ChatGPT: 250 conversations, total known -> remaining list pages fetched in parallel, details concurrently,
+  // and a 429 on one request pauses everyone via the shared gate (io.sleep records the pause)
+  const all = Array.from({ length: 250 }, (_, i) => ({ id: "c" + i, update_time: "t" + i }));
+  let hit429 = false, active = 0, maxActive = 0;
+  const routes = [
+    [/^\/api\/auth\/session$/, { accessToken: "T" }],
+    [/conversations\?offset=(\d+)&limit=100&order=updated$/, (m) => ({ items: all.slice(+m[1], +m[1] + 100), total: 250 })],
+    [/is_archived=true/, { items: [], total: 0 }],
+    [/gizmos\/snorlax/, { items: [] }],
+    [/^\/backend-api\/conversation\/(c\d+)$/, (m) => {
+      if (m[1] === "c7" && !hit429) { hit429 = true; return Object.assign(new Error("slow down"), { status: 429 }); }
+      return { title: m[1], mapping: {} };
+    }],
+    [/memories|user_system_messages/, null],
+  ];
+  const io = makeIO(routes, {});
+  io.concurrency = 5;
+  const logs = [];
+  io.log = (t) => logs.push(t);
+  const sleeps = [];
+  let clock = 1e12;  // fake clock: sleeping advances it instantly
+  io.now = () => clock;
+  io.sleep = async (ms) => {  // instant, but yields like a real timer so parked workers don't spin
+    if (ms >= 5000) sleeps.push(ms);
+    clock += ms;
+    await new Promise((r) => setImmediate(r));
+  };
+  const get = io.getJSON;
+  io.getJSON = async (u, h) => {
+    active++; maxActive = Math.max(maxActive, active);
+    await new Promise((r) => setTimeout(r, 1));
+    try { return await get(u, h); } finally { active--; }
+  };
+  const r = await Core.syncChatGPT(io);
+  assert.strictEqual(r.total, 250);
+  assert.strictEqual(r.fetched, 250);
+  assert.strictEqual(r.imported, 250, "the rate-limited conversation is retried, none lost");
+  assert.ok(maxActive > 1 && maxActive <= 5, "parallel but capped: " + maxActive);
+  assert.ok(sleeps.some((ms) => ms >= 5000), "429 triggers a pause");
+  assert.ok(logs.some((t) => /slowing down to 2 parallel/.test(t)), "429 halves the parallel downloads");
+
+  // the server's `total` can be wrong (seen on a real account): the list must still be walked to the end
+  const many = Array.from({ length: 450 }, (_, i) => ({ id: "m" + i, update_time: "u" + i }));
+  const lying = [
+    [/^\/api\/auth\/session$/, { accessToken: "T" }],
+    [/conversations\?offset=(\d+)&limit=100&order=updated$/, (m) => ({ items: many.slice(+m[1], +m[1] + 100), total: 150 })],
+    [/is_archived=true/, { items: [], total: 0 }],
+    [/gizmos\/snorlax/, { items: [] }],
+    [/^\/backend-api\/conversation\/(m\d+)$/, (m) => ({ title: m[1], mapping: {} })],
+    [/memories|user_system_messages/, null],
+  ];
+  const io3 = makeIO(lying, {});
+  io3.concurrency = 3;
+  io3.sleep = async () => { await new Promise((r) => setImmediate(r)); };
+  const r3 = await Core.syncChatGPT(io3);
+  assert.strictEqual(r3.total, 450, "listed every conversation despite total=150");
+  assert.strictEqual(r3.imported, 450);
+
+  // Retry-After from the server is honoured when it asks for longer than the default pause
+  const gate = Core.makeGate(3);
+  const slept = [];
+  let first = true;
+  let t2 = 0;
+  const io2 = { log() {}, now: () => t2, sleep: async (ms) => { slept.push(ms); t2 += ms; } };
+  const v = await Core.withRetry(io2, async () => {
+    if (first) { first = false; throw Object.assign(new Error("429"), { status: 429, retryAfter: 90 }); }
+    return "ok";
+  }, "x", gate);
+  assert.strictEqual(v, "ok");
+  assert.ok(slept.includes(90000), JSON.stringify(slept));
+  assert.strictEqual(gate.cur, 1);
+}
+
 (async () => {
+  await testParallel();
   await testChatGPT();
   await testClaude();
   testGeminiTodo();

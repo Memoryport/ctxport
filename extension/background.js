@@ -112,41 +112,74 @@ async function geminiScrape(list, full) {
   await log("gemini-web", `${list.length} conversations in sidebar, ${fresh} new, ` +
     `${todo.length - fresh} recent ones re-checked for new messages`);
   if (!todo.length) return { platform: "gemini-web", total: list.length, fetched: 0, imported: 0 };
-  const tab = await chrome.tabs.create({ url: "about:blank", active: false });
+  // Gemini pages are heavy, so use at most 3 background tabs at once.
+  const { concurrency } = await chrome.storage.local.get({ concurrency: CtxportCore.DEFAULT_CONCURRENCY });
+  const nTabs = Math.max(1, Math.min(3, CtxportCore.concurrency({ concurrency }), todo.length));
+  const tabs = [];
+  for (let i = 0; i < nTabs; i++) tabs.push(await chrome.tabs.create({ url: "about:blank", active: false }));
+  const free = tabs.map((t) => t.id);
   let imported = 0, done = 0;
   const buf = [];
   try {
-    for (const c of todo) {
-      await chrome.tabs.update(tab.id, { url: `https://gemini.google.com/app/${c.id}#ctxport-scrape` });
-      await waitTabComplete(tab.id);
+    await CtxportCore.pool(todo, nTabs, async (c) => {
+      const tab = { id: free.pop() };
       try {
-        const r = await sendToTab(tab.id, { type: "gemini-scrape-here" });
-        if (r && r.ok && r.conversation && r.conversation.messages.length) {
-          if (!r.conversation.title) r.conversation.title = c.title;
-          buf.push(r.conversation);
-        } else {
-          await log("gemini-web", `no messages found in ${c.id} (page layout may have changed)`);
+        await chrome.tabs.update(tab.id, { url: `https://gemini.google.com/app/${c.id}#ctxport-scrape` });
+        await waitTabComplete(tab.id);
+        try {
+          const r = await sendToTab(tab.id, { type: "gemini-scrape-here" });
+          if (r && r.ok && r.conversation && r.conversation.messages.length) {
+            if (!r.conversation.title) r.conversation.title = c.title;
+            buf.push(r.conversation);
+          } else {
+            await log("gemini-web", `no messages found in ${c.id} (page layout may have changed)`);
+          }
+        } catch (e) {
+          await log("gemini-web", `scrape failed for ${c.id}: ${e.message}`);
         }
-      } catch (e) {
-        await log("gemini-web", `scrape failed for ${c.id}: ${e.message}`);
+        done++;
+        if (buf.length >= 5) {
+          const r = await server("/ingest", { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ platform: "gemini-web", conversations: buf.splice(0) }) });
+          imported += r.conversations || 0;
+        }
+        if (done % 5 === 0) await log("gemini-web", `${done}/${todo.length}`);
+      } finally {
+        free.push(tab.id);
       }
-      done++;
-      if (buf.length >= 5) {
-        const r = await server("/ingest", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ platform: "gemini-web", conversations: buf.splice(0) }) });
-        imported += r.conversations || 0;
-      }
-      if (done % 5 === 0) await log("gemini-web", `${done}/${todo.length}`);
-    }
+    });
     if (buf.length) {
       const r = await server("/ingest", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ platform: "gemini-web", conversations: buf.splice(0) }) });
       imported += r.conversations || 0;
     }
   } finally {
-    chrome.tabs.remove(tab.id).catch(() => {});
+    for (const t of tabs) chrome.tabs.remove(t.id).catch(() => {});
   }
   return { platform: "gemini-web", total: list.length, fetched: done, imported };
+}
+
+// A tab that was open before the extension was (re)loaded has no content script, and Edge/Chrome may have put
+// an idle tab to sleep (discarded). Wake the tab if needed and inject the scripts, so syncing never fails with
+// "Could not establish connection. Receiving end does not exist."
+async function ensureContentScript(tabId) {
+  let tab = await chrome.tabs.get(tabId);
+  if (tab.discarded || tab.status === "unloaded") {
+    await chrome.tabs.reload(tabId);
+    await waitTabComplete(tabId);
+    tab = await chrome.tabs.get(tabId);
+  }
+  try {
+    const r = await chrome.tabs.sendMessage(tabId, { type: "ctxport-hello" });
+    if (r && r.ok) return;
+  } catch (e) { /* no listener yet: inject below */ }
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["core.js", "content.js"] });
+  } catch (e) {
+    // e.g. the tab is still loading or showing an error page: reload once and let the manifest inject
+    await chrome.tabs.reload(tabId);
+    await waitTabComplete(tabId);
+  }
 }
 
 // Find (or quietly open) a tab of the site and ask its content script to sync.
@@ -162,6 +195,7 @@ async function syncSite(platform, full) {
   }
   await setStatus(platform, { state: "running" });
   try {
+    await ensureContentScript(tab.id);
     const r = await sendToTab(tab.id, { type: "sync", platform, full });
     if (!r || !r.ok) throw Object.assign(new Error((r && r.error) || "no response"), { status: r && r.status });
     await setStatus(platform, { state: "done", result: r.result });
@@ -177,10 +211,12 @@ async function syncSite(platform, full) {
   }
 }
 
+// The three sites are synced at the same time. Each site limits its own request rate, so running them side
+// by side is faster without provoking more 429s; within one site the adaptive limit in core.js applies.
 async function syncAll(full, platforms) {
-  const out = [];
-  for (const p of platforms || Object.keys(SITES)) out.push(await syncSite(p, full));
-  return out;
+  const list = platforms || Object.keys(SITES);
+  const results = await Promise.allSettled(list.map((p) => syncSite(p, full)));
+  return results.map((r, i) => (r.status === "fulfilled" ? r.value : { platform: list[i], error: String(r.reason) }));
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
