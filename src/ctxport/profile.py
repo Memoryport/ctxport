@@ -104,20 +104,56 @@ def build_profile(store, *, include_candidates: bool = False, all_categories: bo
         summary = maybe(summary.strip(), redact)
         if summary:
             parts += ["## In short / 简介", "", summary, ""]
-    if mems:
-        parts.append(render_memories_md(mems, redact=redact, heading_level=2).rstrip())
-        parts.append("")
-    if titles:
-        parts += ["## Things I've been working on lately / 最近在做的事", ""]
-        parts += [f"- {t}" for t in titles]
-        parts.append("")
-    text = "\n".join(parts).rstrip() + "\n"
+    head = "\n".join(parts)
+
+    def render(ms: list, ts: list, more: int = 0) -> str:
+        out = [head]
+        if ms:
+            out += [render_memories_md(ms, redact=redact, heading_level=2).rstrip(), ""]
+        if ts:
+            out += ["## Things I've been working on lately / 最近在做的事", ""] + [f"- {t}" for t in ts] + [""]
+        if more:
+            out += [f"(… {more} more not shown / 另有 {more} 条未列出)", ""]
+        return "\n".join(out).rstrip() + "\n"
+
+    text = render(mems, titles)
+    shown_mems, shown_titles = mems, titles
     if max_chars and len(text) > max_chars:
-        cut = text[:max_chars]
-        text = (cut[: cut.rfind("\n")] if "\n" in cut else cut).rstrip() + "\n"
-    info = {"memories": len(mems), "topics": len(titles), "used_candidates": used_candidates,
+        shown_mems, shown_titles = fit_budget(mems, titles, lambda ms, ts, more: len(render(ms, ts, more)), max_chars)
+        more = len(mems) - len(shown_mems) + len(titles) - len(shown_titles)
+        text = render(shown_mems, shown_titles, more)
+        if len(text) > max_chars:  # even the minimum doesn't fit: hard cut
+            cut = text[:max_chars]
+            text = (cut[: cut.rfind("\n")] if "\n" in cut else cut).rstrip() + "\n"
+    info = {"memories": len(shown_mems), "topics": len(shown_titles), "used_candidates": used_candidates,
+            "omitted": len(mems) - len(shown_mems) + len(titles) - len(shown_titles),
             "summary": bool(summary), "platforms": labels, "chars": len(text)}
     return text, info
+
+
+def fit_budget(mems: list, titles: list, measure, max_chars: int, per_category: int = 2,
+               min_topics: int = 2) -> tuple:
+    """Pick what fits in max_chars so every category stays represented.
+
+    First every category's top `per_category` memories and the first `min_topics` topics, then the rest in rank
+    order (memories arrive ranked: accepted, most seen, most recent). Items that don't fit are skipped, so a
+    long one doesn't block shorter ones after it. `measure(mems, topics, omitted)` returns the rendered length."""
+    by_cat: dict = {}
+    for m in mems:
+        by_cat.setdefault(m.category or "general", []).append(m)
+    first = [m for ms in by_cat.values() for m in ms[:per_category]]
+    rest = [m for m in mems if m not in first]
+    rest.sort(key=lambda m: (m.status != "accepted", -(m.seen_count or 1)))
+    order = [("m", m) for m in first] + [("t", t) for t in titles[:min_topics]] + \
+            [("m", m) for m in rest] + [("t", t) for t in titles[min_topics:]]
+    chosen_m: list = []
+    chosen_t: list = []
+    total = len(mems) + len(titles)
+    for kind, item in order[:600]:
+        tm, tt = (chosen_m + [item], chosen_t) if kind == "m" else (chosen_m, chosen_t + [item])
+        if measure([m for m in mems if m in tm], [t for t in titles if t in tt], total - len(tm) - len(tt)) <= max_chars:
+            chosen_m, chosen_t = tm, tt
+    return [m for m in mems if m in chosen_m], [t for t in titles if t in chosen_t]
 
 
 def copy_to_clipboard(text: str) -> bool:

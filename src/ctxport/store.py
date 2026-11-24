@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import time
 from pathlib import Path
 from typing import Iterable, Optional
 
-from .models import Conversation, MemoryItem, Message
+from .models import similarity, Conversation, MemoryItem, Message
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sources(
@@ -27,7 +28,8 @@ CREATE TABLE IF NOT EXISTS messages(
 CREATE INDEX IF NOT EXISTS msg_conv ON messages(conversation_id, branch, idx);
 CREATE TABLE IF NOT EXISTS memories(
   id TEXT PRIMARY KEY, text TEXT NOT NULL, platform TEXT, category TEXT, source_ref TEXT,
-  confidence REAL, status TEXT, scope TEXT, created_at REAL, updated_at REAL);
+  confidence REAL, status TEXT, scope TEXT, created_at REAL, updated_at REAL,
+  seen_count INTEGER DEFAULT 1, first_seen REAL, last_seen REAL, sources TEXT, question TEXT);
 CREATE TABLE IF NOT EXISTS extracted(
   conversation_id TEXT, method TEXT, extracted_at REAL, PRIMARY KEY(conversation_id, method));
 """
@@ -66,7 +68,7 @@ def trim_tool_text(text: str, keep: int = TOOL_KEEP) -> str:
 #   2. add MIGRATIONS[new_version] = SQL that upgrades a database of the previous version (ALTER TABLE ...),
 #   3. update SCHEMA so brand-new databases are created in the new layout directly.
 # Migrations run in order, each in its own transaction, the next time the store is opened.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 MIGRATIONS: dict = {
     # 2: the full-text index covers dialogue only (FTS_KINDS); the triggers are recreated by FTS_SCHEMA and the
     #    index is rebuilt once after the migration.
@@ -75,7 +77,22 @@ DROP TRIGGER IF EXISTS messages_ai;
 DROP TRIGGER IF EXISTS messages_ad;
 DROP TRIGGER IF EXISTS messages_au;
 """,
+    # 3: memories remember how often and when they were seen, every conversation they came from, and which
+    #    questionnaire question they answer.
+    3: """
+ALTER TABLE memories ADD COLUMN seen_count INTEGER DEFAULT 1;
+ALTER TABLE memories ADD COLUMN first_seen REAL;
+ALTER TABLE memories ADD COLUMN last_seen REAL;
+ALTER TABLE memories ADD COLUMN sources TEXT;
+ALTER TABLE memories ADD COLUMN question TEXT;
+UPDATE memories SET sources = json_array(source_ref) WHERE source_ref IS NOT NULL;
+""",
 }
+
+# An extracted candidate this similar to an existing memory of the same scope and category is merged into it
+# (or dropped, when you rejected the existing one). See models.similarity.
+NEAR_DUPLICATE = 0.8
+MAX_SOURCES = 50
 
 
 class NewerDatabase(RuntimeError):
@@ -205,12 +222,20 @@ class Store:
             try:
                 self.db.execute("BEGIN")
                 for stmt in _split_sql(MIGRATIONS[target]):
+                    if self._column_exists_for(stmt):
+                        continue  # ADD COLUMN that is already there (a database stamped older than its layout)
                     self.db.execute(stmt)
                 self.db.execute(f"PRAGMA user_version = {int(target)}")
                 self.db.commit()
             except BaseException:
                 self.db.rollback()
                 raise
+
+    def _column_exists_for(self, stmt: str) -> bool:
+        m = re.match(r"\s*ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(\w+)", stmt, re.I)
+        if not m:
+            return False
+        return m.group(2) in {r[1] for r in self.db.execute(f"PRAGMA table_info({m.group(1)})")}
 
     def rebuild_fts(self) -> None:
         """Re-index dialogue messages only (FTS_KINDS)."""
@@ -373,29 +398,79 @@ class Store:
             raise
 
     # ------------------------------------------------------------ memories
-    def upsert_memory(self, mem: MemoryItem) -> str:
-        """Insert or merge; returns 'new' | 'updated' | 'kept'."""
+    def _sources(self, row) -> list:
+        try:
+            out = json.loads(row["sources"]) if row["sources"] else []
+        except ValueError:
+            out = []
+        if not out and row["source_ref"]:
+            out = [row["source_ref"]]
+        return out
+
+    def _seen_again(self, row, mem: MemoryItem, seen_at: Optional[float]) -> bool:
+        """Record another mention of an existing memory. Each conversation counts once, however often it is
+        re-extracted. Returns True when it was a new conversation."""
+        sources = self._sources(row)
+        ref = mem.source_ref
+        new_ref = bool(ref) and ref not in sources
+        if new_ref:
+            sources = (sources + [ref])[-MAX_SOURCES:]
+        times = [t for t in (row["first_seen"], row["last_seen"], seen_at) if t]
+        self.db.execute(
+            "UPDATE memories SET seen_count=COALESCE(seen_count,1)+?, first_seen=?, last_seen=?, sources=?,"
+            " confidence=MAX(confidence,?), question=COALESCE(question,?) WHERE id=?",
+            (1 if new_ref else 0, min(times) if times else None, max(times) if times else None,
+             _j(sources) if sources else None, mem.confidence, mem.question, row["id"]))
+        return new_ref
+
+    def find_near_duplicate(self, mem: MemoryItem):
+        """The most similar other memory of the same scope and category, if it is at least NEAR_DUPLICATE alike."""
+        best, best_sim = None, NEAR_DUPLICATE
+        for r in self.db.execute("SELECT * FROM memories WHERE scope=? AND category=? AND id!=?",
+                                 (mem.scope, mem.category, mem.id)):
+            sim = similarity(mem.text, r["text"])
+            if sim >= best_sim:
+                best, best_sim = r, sim
+        return best
+
+    def upsert_memory(self, mem: MemoryItem, seen_at: Optional[float] = None) -> str:
+        """Insert or merge. Returns 'new' | 'updated' | 'merged' | 'seen' | 'kept'.
+
+        An extracted candidate that nearly duplicates an existing memory is merged into it ('merged'), or
+        dropped when you rejected that memory ('kept'), so rephrasings don't come back. Memories you write
+        yourself (status 'accepted') are only matched exactly."""
         if not mem.text:
             return "kept"
-        r = self.db.execute("SELECT status, confidence FROM memories WHERE id=?", (mem.id,)).fetchone()
         now = time.time()
+        seen_at = seen_at or mem.last_seen
+        r = self.db.execute("SELECT * FROM memories WHERE id=?", (mem.id,)).fetchone()
+        if r is None and mem.status == "candidate":
+            near = self.find_near_duplicate(mem)
+            if near is not None:
+                if near["status"] == "rejected":
+                    return "kept"
+                return "merged" if self._seen_again(near, mem, seen_at) else "kept"
         if r is None:
+            sources = [mem.source_ref] if mem.source_ref else []
             self.db.execute(
-                "INSERT INTO memories(id,text,platform,category,source_ref,confidence,status,scope,created_at,updated_at)"
-                " VALUES(?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO memories(id,text,platform,category,source_ref,confidence,status,scope,created_at,"
+                "updated_at,seen_count,first_seen,last_seen,sources,question) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (mem.id, mem.text, mem.platform, mem.category, mem.source_ref, mem.confidence, mem.status, mem.scope,
-                 mem.created_at, now))
+                 mem.created_at, now, max(1, mem.seen_count or 1), mem.first_seen or seen_at, seen_at,
+                 _j(sources) if sources else None, mem.question))
             return "new"
         if r["status"] == "rejected":
             return "kept"
+        changed = self._seen_again(r, mem, seen_at)
         if r["status"] == "candidate" and mem.status == "accepted":
             self.db.execute("UPDATE memories SET status='accepted', confidence=MAX(confidence,?), updated_at=? WHERE id=?",
                             (mem.confidence, now, mem.id))
             return "updated"
-        return "kept"
+        return "seen" if changed else "kept"
 
     def memories(self, status: Optional[Iterable[str]] = ("accepted",), scope: Optional[str] = None,
                  platform: Optional[str] = None) -> list:
+        """Ordered by scope and category, then accepted first, most often seen, most recently seen."""
         q = "SELECT * FROM memories WHERE 1=1"
         args: list = []
         if status:
@@ -408,11 +483,52 @@ class Store:
         if platform:
             q += " AND platform=?"
             args.append(platform)
-        q += " ORDER BY scope, category, created_at"
-        return [MemoryItem(id=r["id"], text=r["text"], platform=r["platform"], category=r["category"],
-                           source_ref=r["source_ref"], confidence=r["confidence"], status=r["status"],
-                           scope=r["scope"], created_at=r["created_at"])
-                for r in self.db.execute(q, args)]
+        q += (" ORDER BY scope, category, status!='accepted', COALESCE(seen_count,1) DESC,"
+              " COALESCE(last_seen, created_at) DESC, created_at")
+        return [self._row_memory(r) for r in self.db.execute(q, args)]
+
+    @staticmethod
+    def _row_memory(r) -> MemoryItem:
+        return MemoryItem(id=r["id"], text=r["text"], platform=r["platform"], category=r["category"],
+                          source_ref=r["source_ref"], confidence=r["confidence"], status=r["status"],
+                          scope=r["scope"], created_at=r["created_at"], seen_count=r["seen_count"] or 1,
+                          first_seen=r["first_seen"], last_seen=r["last_seen"], question=r["question"])
+
+    def memory_sources(self, mid: str) -> list:
+        r = self.db.execute("SELECT * FROM memories WHERE id=?", (mid,)).fetchone()
+        return self._sources(r) if r else []
+
+    def dedupe_memories(self) -> int:
+        """Merge near-duplicate memories already in the store (same scope and category). The keeper is the
+        accepted one, else the most confident, most seen, shortest. Rejected memories are left alone.
+        Returns how many memories were merged away."""
+        merged = 0
+        groups: dict = {}
+        for r in self.db.execute("SELECT * FROM memories WHERE status!='rejected'"):
+            groups.setdefault((r["scope"], r["category"]), []).append(r)
+        for rows in groups.values():
+            rows.sort(key=lambda r: (r["status"] != "accepted", -(r["confidence"] or 0), -(r["seen_count"] or 1),
+                                     len(r["text"])))
+            keepers: list = []
+            for r in rows:
+                k = next((k for k in keepers if similarity(k["text"], r["text"]) >= NEAR_DUPLICATE), None)
+                if k is None:
+                    keepers.append(r)
+                    continue
+                k = self.db.execute("SELECT * FROM memories WHERE id=?", (k["id"],)).fetchone()
+                sources = self._sources(k)
+                sources += [ref for ref in self._sources(r) if ref not in sources]
+                times = [t for t in (k["first_seen"], k["last_seen"], r["first_seen"], r["last_seen"]) if t]
+                self.db.execute(
+                    "UPDATE memories SET seen_count=?, first_seen=?, last_seen=?, sources=?,"
+                    " question=COALESCE(question,?) WHERE id=?",
+                    ((k["seen_count"] or 1) + (r["seen_count"] or 1), min(times) if times else None,
+                     max(times) if times else None, _j(sources[-MAX_SOURCES:]) if sources else None, r["question"],
+                     k["id"]))
+                self.db.execute("DELETE FROM memories WHERE id=?", (r["id"],))
+                merged += 1
+        self.db.commit()
+        return merged
 
     def resolve_memory_id(self, mid: str) -> Optional[str]:
         """Exact id, or a prefix that matches exactly one memory. None if nothing matches.
@@ -445,7 +561,9 @@ class Store:
         if not r:
             return
         new = MemoryItem(text=text, platform=r["platform"], category=category or r["category"],
-                         source_ref=r["source_ref"], confidence=1.0, status=status, scope=r["scope"])
+                         source_ref=r["source_ref"], confidence=1.0, status=status, scope=r["scope"],
+                         seen_count=r["seen_count"] or 1, first_seen=r["first_seen"], last_seen=r["last_seen"],
+                         question=r["question"])
         if new.id != mid:
             self.db.execute("UPDATE memories SET status='rejected', updated_at=? WHERE id=?", (time.time(), mid))
             self.db.execute("DELETE FROM memories WHERE id=? AND status!='rejected'", (new.id,))

@@ -7,6 +7,14 @@ All notable changes to ctxport are listed here. The format follows
 ## [Unreleased]
 
 ### Added
+- Memory quality (database version 3): extracted facts that nearly duplicate an existing memory (same category,
+  ~80% alike after folding width, case, spacing and the subject) are merged into it; each memory counts the
+  conversations that mention it and records when it was first and last seen; memories rank by accepted, then
+  most seen, then most recent; rewordings of a rejected memory stay rejected; the review checklist shows counts
+  and flags older facts as "maybe outdated" when a newer related one appears. `ctxport memories dedupe` merges
+  duplicates already stored.
+- `ctxport profile --max-chars` keeps every category: each gets its top entries first, then the rest by rank,
+  with a "… N more not shown" line instead of cutting whole sections off.
 - Smaller databases: long tool outputs keep their first and last 2 KB (`--keep-full-tools` keeps them whole) and
   the full-text index covers dialogue only (database version 2; the index is rebuilt once on upgrade). A
   coding-assistant sample went from 274 MB to 30 MB.
