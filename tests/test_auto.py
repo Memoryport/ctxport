@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import threading
@@ -88,10 +89,15 @@ def test_cherry_local_auto_detected(tmp_path, monkeypatch):
 
 # ---------------------------------------------------------------- ingest server
 
-def _post(port, path, body=None, origin="chrome-extension://abcdefghijklmnop"):
-    req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", method="POST" if body is not None else "GET",
-                                 data=json.dumps(body).encode() if body is not None else None,
-                                 headers={"Content-Type": "application/json", **({"Origin": origin} if origin else {})})
+EXT = "chrome-extension://abcdefghijklmnop"
+
+
+def _post(port, path, body=None, origin=EXT, token=None, raw=None, headers=None):
+    data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
+    req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", method="POST" if data is not None else "GET",
+                                 data=data,
+                                 headers={"Content-Type": "application/json", **({"Origin": origin} if origin else {}),
+                                          **({"X-Ctxport-Token": token} if token else {}), **(headers or {})})
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
             return r.status, json.loads(r.read())
@@ -110,6 +116,19 @@ def server(tmp_path):
     srv.server_close()
 
 
+def _pair(port, origin=EXT):
+    from ctxport import ingest
+    code = ingest.new_pairing_code()
+    status, r = _post(port, "/pair", {"code": code.lower()}, origin=origin)  # dash and case are forgiven
+    assert status == 200 and r["token"], r
+    return r["token"]
+
+
+@pytest.fixture
+def paired(server):
+    return server, _pair(server)
+
+
 def _chatgpt_api_conv(tmp_path):
     import zipfile
     with zipfile.ZipFile(fx.chatgpt_export(tmp_path)) as z:
@@ -119,19 +138,34 @@ def _chatgpt_api_conv(tmp_path):
 
 
 def test_ingest_server_pairing_and_import(tmp_path, server):
+    from ctxport import ingest
     port = server
-    assert _post(port, "/ping")[1]["ok"]
+    assert _post(port, "/ping")[1]["paired"] is False
     # ordinary web pages / no origin are refused
     assert _post(port, "/ingest", {"platform": "chatgpt", "conversations": []}, origin="https://evil.example")[0] == 403
     assert _post(port, "/ingest", {"platform": "chatgpt", "conversations": []}, origin=None)[0] == 403
+    # the first extension to connect is NOT trusted any more: it needs the pairing code
+    code, r = _post(port, "/ingest", {"platform": "chatgpt", "conversations": []})
+    assert code == 403 and r.get("need_pairing")
+    assert _post(port, "/known?platform=chatgpt")[0] == 403
+    assert not ingest.is_paired()
+    # no code issued yet -> pairing is impossible
+    assert _post(port, "/pair", {"code": "AAAA-AAAA"})[0] == 403
+    token = _pair(port)
+    ping = _post(port, "/ping", token=token)[1]
+    assert ping["paired"] and ping["authorized"]
+    # the code was single-use
+    assert _post(port, "/pair", {"code": "whatever"})[0] == 403
     conv = _chatgpt_api_conv(tmp_path)
     code, r = _post(port, "/ingest", {"platform": "chatgpt", "conversations": [conv],
                                       "memories": [{"content": "Prefers dark roast"}],
-                                      "custom_instructions": {"about_user_message": "I teach chemistry"}})
+                                      "custom_instructions": {"about_user_message": "I teach chemistry"}}, token=token)
     assert code == 200 and r["conversations"] == 1, r
-    # a second, different extension is refused after pairing
-    assert _post(port, "/known?platform=chatgpt", origin="chrome-extension://otherextensionid")[0] == 403
-    code, k = _post(port, "/known?platform=chatgpt")
+    # the paired origin without the token, a wrong token, or another extension with the token: all refused
+    assert _post(port, "/known?platform=chatgpt")[0] == 403
+    assert _post(port, "/known?platform=chatgpt", token="nope")[0] == 403
+    assert _post(port, "/known?platform=chatgpt", origin="chrome-extension://otherextensionid", token=token)[0] == 403
+    code, k = _post(port, "/known?platform=chatgpt", token=token)
     assert k["known"] == {"cg-1": "2026-01-02T00:00:00Z"}
     s = Store(tmp_path / "ctxport_home" / "ctxport.db")
     c = s.get_conversation("chatgpt:cg-1")
@@ -141,10 +175,65 @@ def test_ingest_server_pairing_and_import(tmp_path, server):
     s.close()
     inbox = tmp_path / "ctxport_home" / "inbox" / "chatgpt"
     assert (inbox / "cg-1.json").exists() and (inbox / "_account.json").exists()
+    # the token itself is never stored, only its hash
+    assert token not in (tmp_path / "ctxport_home" / "ingest-pairing.json").read_text()
 
 
-def test_inbox_is_picked_up_by_sync(tmp_path, server):
+def test_pairing_code_attempts_and_expiry(server, monkeypatch):
+    from ctxport import ingest
     port = server
+    ingest.new_pairing_code()
+    for _ in range(ingest.PAIR_CODE_ATTEMPTS):
+        assert _post(port, "/pair", {"code": "WRONG-CODE"})[0] == 403
+    assert not (ingest.default_home() / "ingest-pairing-code.json").exists()  # burned after 5 misses
+    code = ingest.new_pairing_code()
+    real_time = ingest.time.time
+    monkeypatch.setattr(ingest.time, "time", lambda: real_time() + ingest.PAIR_CODE_TTL + 1)
+    assert _post(port, "/pair", {"code": code})[0] == 403  # expired
+    monkeypatch.setattr(ingest.time, "time", real_time)
+    # a web page can't pair even with the right code
+    code = ingest.new_pairing_code()
+    assert _post(port, "/pair", {"code": code}, origin="https://evil.example")[0] == 403
+    # re-pairing replaces the old extension
+    t1 = _pair(port)
+    t2 = _pair(port, origin="chrome-extension://newbrowserprofile")
+    assert _post(port, "/known?platform=chatgpt", token=t1)[0] == 403
+    assert _post(port, "/known?platform=chatgpt", origin="chrome-extension://newbrowserprofile", token=t2)[0] == 200
+    assert ingest.reset_pairing() and not ingest.is_paired()
+
+
+def test_ingest_rejects_bad_content_length(paired):
+    port, token = paired
+    import http.client
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+    conn.putrequest("POST", "/ingest")
+    for k, v in (("Origin", EXT), ("X-Ctxport-Token", token), ("Content-Length", "abc")):
+        conn.putheader(k, v)
+    conn.endheaders()
+    assert conn.getresponse().status == 413
+    conn.close()
+    assert _post(port, "/ingest", raw=b"[1, 2]", token=token)[0] == 400
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permissions")
+def test_private_permissions(tmp_path, paired):
+    port, token = paired
+    home = tmp_path / "ctxport_home"
+    assert _post(port, "/ingest", {"platform": "gemini-web", "conversations": [
+        {"id": "g1", "title": "t", "messages": [{"role": "user", "text": "hi"}]}]}, token=token)[0] == 200
+    mode = lambda p: p.stat().st_mode & 0o777  # noqa: E731
+    assert mode(home) == 0o700 and mode(home / "inbox") == 0o700 and mode(home / "inbox" / "gemini-web") == 0o700
+    assert mode(home / "inbox" / "gemini-web" / "g1.json") == 0o600
+    assert mode(home / "ctxport.db") == 0o600
+    assert mode(home / "ingest-pairing.json") == 0o600
+    # an existing, too-open home is tightened when the store is opened
+    home.chmod(0o755)
+    Store().close()
+    assert mode(home) == 0o700
+
+
+def test_inbox_is_picked_up_by_sync(tmp_path, paired):
+    port, token = paired
     claude_conv = {"uuid": "web-1", "name": "From the web", "created_at": "2026-01-01T00:00:00Z",
                    "updated_at": "2026-01-01T00:01:00Z", "current_leaf_message_uuid": "m2",
                    "chat_messages": [
@@ -159,8 +248,9 @@ def test_inbox_is_picked_up_by_sync(tmp_path, server):
            "messages": [{"role": "user", "text": "What is a prime?"}, {"role": "model", "kind": "reasoning", "text": "think"},
                         {"role": "model", "text": "Two divisors."}]}
     assert _post(port, "/ingest", {"platform": "claude-ai", "conversations": [claude_conv],
-                                   "projects": [{"uuid": "p", "name": "Thesis", "prompt_template": "- cite sources"}]})[0] == 200
-    assert _post(port, "/ingest", {"platform": "gemini-web", "conversations": [gem]})[0] == 200
+                                   "projects": [{"uuid": "p", "name": "Thesis", "prompt_template": "- cite sources"}]},
+                 token=token)[0] == 200
+    assert _post(port, "/ingest", {"platform": "gemini-web", "conversations": [gem]}, token=token)[0] == 200
     # a fresh store re-imports everything from the inbox with a plain `sync`
     s = Store(tmp_path / "fresh.db")
     reps = {r.platform: r for r in pipeline.sync(s, only=["claude-ai", "gemini-web", "chatgpt"])}

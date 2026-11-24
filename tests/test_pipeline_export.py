@@ -190,3 +190,30 @@ def test_cli_end_to_end(tmp_path, capsys, monkeypatch):
     assert (tmp_path / "ctxport-out" / "claude-ai" / "claude-memory-import.txt").exists()
     assert main(["--db", str(db), "mcp-config", "codex"]) == 0
     assert "[mcp_servers.ctxport]" in capsys.readouterr().out
+
+
+def test_memory_ids_need_exact_or_unique_prefix(tmp_path, capsys):
+    from ctxport.store import AmbiguousId
+    db = tmp_path / "m.db"
+    s = Store(db)
+    for mid, text in (("abc1", "Likes tea"), ("abc2", "Likes coffee"), ("x_z9", "Uses vim"), ("xyz8", "Has a cat")):
+        s.db.execute("INSERT INTO memories(id,text,platform,category,status,scope) VALUES(?,?,?,?,?,?)",
+                     (mid, text, "manual", "general", "candidate", "global"))
+    s.commit()
+    with pytest.raises(AmbiguousId):
+        s.resolve_memory_id("abc")
+    assert s.resolve_memory_id("abc1") == "abc1"
+    assert s.resolve_memory_id("x_") == "x_z9"  # "_" is literal, so it doesn't also match xyz8
+    assert s.resolve_memory_id("%") is None and s.delete_memory("%") == 0
+    s.close()
+    # CLI: an ambiguous prefix changes nothing, even next to a valid id
+    assert main(["--db", str(db), "memories", "rm", "abc1", "a"]) == 2
+    assert "several memories" in capsys.readouterr().err
+    assert main(["--db", str(db), "memories", "accept", "abc1", "xy"]) == 0
+    assert "2 memories" in capsys.readouterr().out
+    assert main(["--db", str(db), "memories", "rm", "%", "nope"]) == 0
+    assert "0 deleted" in capsys.readouterr().out
+    s = Store(db)
+    assert {m.id for m in s.memories(status=("accepted",))} == {"abc1", "xyz8"}
+    assert len(s.memories(status=None)) == 4
+    s.close()

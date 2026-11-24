@@ -62,6 +62,7 @@ pip install ".[mcp]"      # 需要 MCP Server 时
 
 ```bash
 ctxport serve-ingest --autostart install   # 一次：本机接收服务开机自启（扩展用）
+ctxport serve-ingest --pair                # 一次：打印配对码，填入扩展弹窗
 ctxport sync --extract                     # 本地来源 + 扩展收到的数据，全部增量入库
 ```
 
@@ -111,7 +112,7 @@ ctxport search 机器学习 部署       # 中文 ≥3 字走 FTS5，2 字自动
 3. **LLM 提取**（`--llm`，可选）：OpenAI 兼容接口，默认本地 Ollama `http://localhost:11434/v1`、`qwen2.5:7b`（`CTXPORT_LLM_BASE_URL` / `CTXPORT_LLM_MODEL` / `CTXPORT_LLM_API_KEY`）。只发送**用户消息**（先遮蔽密钥），约 6000 字符一块；非 localhost 地址必须加 `--allow-remote`。结果为 candidate（0.8）。
 4. 每个对话每种方法只提取一次，对话更新后自动重新提取。
 5. **审核**：`ctxport memories edit` 生成勾选清单，`[x]` 保留、`[ ]` 拒绝、可直接改写；被拒绝的不会再被导入恢复。也可用 `memories list/add/accept/reject/rm`。
-6. 导出只包含 accepted（`--include-candidates` 可包含候选）；所有导出都经过遮蔽（OpenAI/Anthropic/GitHub/Google/AWS/Slack 密钥、JWT、私钥块、`password|token|api_key = …`），`--no-redact` 关闭。
+6. 导出只包含 accepted（`--include-candidates` 可包含候选）；所有导出都经过遮蔽（OpenAI/Anthropic/GitHub/GitLab/Google/AWS/Slack/Stripe/Hugging Face 等密钥、JWT、私钥块、`password|token|api_key = …`（含 JSON、环境变量如 `GITHUB_TOKEN=…`）、`Authorization: Bearer …`、URL 中的 `user:密码@`），`--no-redact` 关闭。
 
 ## MCP
 
@@ -121,7 +122,7 @@ ctxport mcp-config            # 打印 Claude Desktop / Claude Code / Codex / Ge
 claude mcp add --scope user ctxport -- ctxport serve-mcp
 ```
 
-工具：`get_user_memory()`、`search_history(query, platform?, limit)`、`list_recent_conversations(platform?, limit)`、`get_conversation(conversation_id, last_n)`、`remember(fact, category)`。兼容 mcp 1.x 与 2.x，所有输出经过遮蔽。GUI 应用里找不到 `ctxport` 时请用绝对路径。
+工具：`get_user_memory()`、`search_history(query, platform?, limit)`、`list_recent_conversations(platform?, limit)`、`get_conversation(conversation_id, last_n)`、`remember(fact, category)`（保存为候选记忆，需你在 `ctxport memories edit` 中确认后才会生效和导出）。兼容 mcp 1.x 与 2.x，所有输出经过遮蔽。GUI 应用里找不到 `ctxport` 时请用绝对路径。
 
 ## 隐私
 
@@ -168,6 +169,7 @@ ctxport 是独立的开源项目，与 OpenAI、Anthropic、Google、Cherry Stud
 * **Local only**: no network except the opt-in LLM extraction (remote endpoints need `--allow-remote`), no telemetry, never writes other apps' data; databases are read from a temp copy.
 * **Safe writes**: previews in `./ctxport-out/`; `--apply` only updates the `<!-- ctxport:begin -->…<!-- ctxport:end -->` block and backs up the original as `*.ctxport.bak`; re-imports ignore that block.
 * **No manual exports**: local apps (incl. Chatbox / Cherry Studio via a pure-Python Chromium IndexedDB reader) are read directly; ChatGPT / Claude.ai / Gemini web are synced by the bundled browser extension through your logged-in tab to `ctxport serve-ingest` on 127.0.0.1 (no cookie decryption, nothing leaves your machine).
+* **Private by default**: `~/.ctxport` is readable only by you (0700 / 0600). Secrets (API keys, tokens, passwords in `key=value`, JSON, env vars, `Authorization` headers and URLs) are masked in everything that leaves the store. Memories that an MCP client saves with `remember` are only *candidates* until you accept them. The browser extension pairs with `ctxport serve-ingest` through a one-time code (`ctxport serve-ingest --pair`). `handoff --llm` sends the earlier part of the conversation (both sides, redacted) to the LLM you configured.
 * **Zero dependencies** for the core (stdlib only). `pip install ".[mcp]"` for the MCP server (mcp 1.x and 2.x). Not on PyPI yet — install from source.
 
 ```bash

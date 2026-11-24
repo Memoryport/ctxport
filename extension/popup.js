@@ -28,11 +28,26 @@ async function refresh() {
 async function ping() {
   const r = await chrome.runtime.sendMessage({ type: "ping" });
   const ok = r && r.ok;
-  $("dot").className = "dot " + (ok ? "ok" : "err");
-  $("srv").textContent = ok ? `本地 ctxport ${r.version}` : "本地服务未运行";
+  const authed = ok && r.authorized;
+  $("dot").className = "dot " + (authed ? "ok" : "err");
+  $("srv").textContent = !ok ? "本地服务未运行" : authed ? `本地 ctxport ${r.version}` : `本地 ctxport ${r.version} · 未配对`;
   $("hint").hidden = !!ok;
-  $("sync").disabled = !ok;
+  $("pair").hidden = !ok || !!authed;
+  $("sync").disabled = !authed;
 }
+
+$("pairbtn").addEventListener("click", async () => {
+  $("pairerr").textContent = "";
+  $("pairbtn").disabled = true;
+  const r = await chrome.runtime.sendMessage({ type: "pair", code: $("code").value });
+  $("pairbtn").disabled = false;
+  if (!r || !r.ok) {
+    $("pairerr").textContent = (r && r.error) || "配对失败 / pairing failed";
+    return;
+  }
+  $("code").value = "";
+  ping();
+});
 
 $("sync").addEventListener("click", async () => {
   $("sync").disabled = true;

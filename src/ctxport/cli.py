@@ -15,7 +15,7 @@ from .adapters._render import render_message_md, render_transcript, visible
 from .adapters.base import ExportOptions
 from .models import MemoryItem
 from .redact import redact
-from .store import Store, default_home
+from .store import AmbiguousId, Store, default_home
 from .utils import fmt_time, parse_since, write_managed
 
 
@@ -129,11 +129,27 @@ def cmd_memories(args) -> int:
                 for m in s.memories(status=("candidate",)):
                     n += s.set_memory_status(m.id, target)
             else:
-                n = sum(s.set_memory_status(i, target) for i in args.ids)
+                try:  # resolve every id first, so an ambiguous one changes nothing
+                    ids = [s.resolve_memory_id(i) for i in args.ids]
+                except AmbiguousId as e:
+                    info(str(e))
+                    return 2
+                for i, rid in zip(args.ids, ids):
+                    if rid is None:
+                        info(f"no memory with id {i!r}")
+                n = sum(s.set_memory_status(rid, target) for rid in dict.fromkeys(ids) if rid)
             print(f"{n} memories → {target}")
             return 0
         if a == "rm":
-            print(f"{sum(s.delete_memory(i) for i in args.ids)} deleted")
+            try:
+                ids = [s.resolve_memory_id(i) for i in args.ids]
+            except AmbiguousId as e:
+                info(str(e))
+                return 2
+            for i, rid in zip(args.ids, ids):
+                if rid is None:
+                    info(f"no memory with id {i!r}")
+            print(f"{sum(s.delete_memory(rid) for rid in dict.fromkeys(ids) if rid)} deleted")
             return 0
         if a == "edit":
             path = Path(args.file)
@@ -337,9 +353,16 @@ def cmd_serve_ingest(args) -> int:
     from . import ingest
     if args.reset_pairing:
         print("pairing reset" if ingest.reset_pairing() else "no pairing to reset")
+        ingest.print_pairing_code()
+        return 0
+    if args.pair:
+        ingest.print_pairing_code()
+        print("The running receiver accepts it right away; pairing replaces any earlier extension.")
         return 0
     if args.autostart == "install":
         print(ingest.autostart_install(args.port))
+        if not ingest.is_paired():
+            ingest.print_pairing_code()
         return 0
     if args.autostart == "remove":
         print(ingest.autostart_remove())
@@ -473,7 +496,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("serve-ingest", help="local receiver for the ctxport browser extension (127.0.0.1)")
     p.add_argument("--port", type=int, default=8765)
-    p.add_argument("--reset-pairing", action="store_true", help="forget the paired extension")
+    p.add_argument("--pair", action="store_true",
+                   help="print a one-time code to pair the browser extension (works while the receiver runs)")
+    p.add_argument("--reset-pairing", action="store_true", help="forget the paired extension and print a new code")
     p.add_argument("--autostart", choices=["install", "remove"],
                    help="start the receiver at login (launchd / systemd --user / Startup folder)")
     p.set_defaults(fn=cmd_serve_ingest)

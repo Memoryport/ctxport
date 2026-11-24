@@ -50,6 +50,59 @@ def default_home() -> Path:
     return Path(os.environ.get("CTXPORT_HOME") or Path.home() / ".ctxport").expanduser()
 
 
+def _chmod(path: Path, mode: int) -> None:
+    try:
+        os.chmod(path, mode)
+    except OSError:  # not our file, or a filesystem without POSIX modes (Windows): best effort
+        pass
+
+
+def ensure_private_dir(path: Path) -> Path:
+    """Create `path` (and parents) and make it accessible only to the current user (0700 on POSIX).
+
+    Chat history is personal data; other local accounts must not be able to read it."""
+    path = Path(path)
+    existed = path.exists()
+    path.mkdir(parents=True, exist_ok=True)
+    home = default_home()
+    try:
+        rel = path.resolve().relative_to(home.resolve())
+    except (ValueError, OSError):
+        # a custom location (e.g. --db /somewhere/x.db): never change modes of a directory we didn't create
+        if not existed:
+            _chmod(path, 0o700)
+        return path
+    # inside the ctxport home: tighten the home itself and every directory down to `path`
+    d = home
+    _chmod(d, 0o700)
+    for part in rel.parts:
+        d = d / part
+        _chmod(d, 0o700)
+    return path
+
+
+def private_write_text(path: Path, text: str) -> None:
+    """Atomically write `text` to `path` with 0600 permissions (temp file in the same dir + os.replace)."""
+    path = Path(path)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{time.monotonic_ns()}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    _chmod(path, 0o600)
+
+
+class AmbiguousId(ValueError):
+    pass
+
+
 def _j(obj) -> str:
     return json.dumps(obj or {}, ensure_ascii=False, default=str)
 
@@ -59,7 +112,9 @@ class Store:
         if path is None:
             path = default_home() / "ctxport.db"
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_private_dir(self.path.parent)
+        if not self.path.exists():
+            os.close(os.open(self.path, os.O_WRONLY | os.O_CREAT, 0o600))
         # Raw source JSON roughly triples the DB size; keep it only when asked (--keep-raw / CTXPORT_STORE_RAW=1).
         self.store_raw = store_raw if store_raw is not None else os.environ.get("CTXPORT_STORE_RAW") == "1"
         self.db = sqlite3.connect(str(self.path))
@@ -69,6 +124,10 @@ class Store:
         self.db.executescript(SCHEMA)
         self.fts = self._init_fts()
         self.db.commit()
+        for suffix in ("", "-wal", "-shm"):
+            p = Path(str(self.path) + suffix)
+            if p.exists():
+                _chmod(p, 0o600)
 
     def _init_fts(self) -> bool:
         try:
@@ -261,8 +320,29 @@ class Store:
                            scope=r["scope"], created_at=r["created_at"])
                 for r in self.db.execute(q, args)]
 
+    def resolve_memory_id(self, mid: str) -> Optional[str]:
+        """Exact id, or a prefix that matches exactly one memory. None if nothing matches.
+
+        Raises AmbiguousId when a prefix matches several memories, so `memories rm a` can never hit many rows.
+        The prefix is compared literally (no LIKE wildcards)."""
+        mid = (mid or "").strip()
+        if not mid:
+            return None
+        if self.db.execute("SELECT 1 FROM memories WHERE id=?", (mid,)).fetchone():
+            return mid
+        rows = self.db.execute("SELECT id FROM memories WHERE substr(id, 1, ?)=? LIMIT 6",
+                               (len(mid), mid)).fetchall()
+        if len(rows) > 1:
+            shown = ", ".join(r[0] for r in rows[:5])
+            raise AmbiguousId(f"id prefix {mid!r} matches several memories ({shown}{', …' if len(rows) > 5 else ''});"
+                              " use more characters")
+        return rows[0][0] if rows else None
+
     def set_memory_status(self, mid: str, status: str) -> int:
-        cur = self.db.execute("UPDATE memories SET status=?, updated_at=? WHERE id LIKE ?", (status, time.time(), mid + "%"))
+        rid = self.resolve_memory_id(mid)
+        if rid is None:
+            return 0
+        cur = self.db.execute("UPDATE memories SET status=?, updated_at=? WHERE id=?", (status, time.time(), rid))
         self.db.commit()
         return cur.rowcount
 
@@ -281,7 +361,10 @@ class Store:
                             (status, new.category, time.time(), mid))
 
     def delete_memory(self, mid: str) -> int:
-        cur = self.db.execute("DELETE FROM memories WHERE id LIKE ?", (mid + "%",))
+        rid = self.resolve_memory_id(mid)
+        if rid is None:
+            return 0
+        cur = self.db.execute("DELETE FROM memories WHERE id=?", (rid,))
         self.db.commit()
         return cur.rowcount
 

@@ -72,7 +72,7 @@
     if (Date.now() - last < 6 * 3600 * 1000) return;
     try {
       const up = await bg({ type: "ping" });
-      if (!up || !up.ok) return;  // receiver not running: stay quiet
+      if (!up || !up.ok || !up.authorized) return;  // receiver not running or not paired: stay quiet
       cfg.lastAuto[platform] = Date.now();
       chrome.storage.local.set({ lastAuto: cfg.lastAuto });
       await new Promise((r) => setTimeout(r, 4000));  // let the page settle
