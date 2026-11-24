@@ -197,3 +197,35 @@ def apply_review(store: Store, entries: list) -> dict:
             stats["accepted"] += 1
     store.commit()
     return stats
+
+
+def coverage_report(store: Store, min_user_messages: int = 5) -> dict:
+    """How complete the extracted memory is: memories per category, empty categories, and conversations where
+    you wrote at least `min_user_messages` messages but nothing was extracted (per platform)."""
+    cats = {c: 0 for c in CATEGORIES}
+    for r in store.db.execute("SELECT category, COUNT(*) n FROM memories WHERE status!='rejected' GROUP BY category"):
+        cats[r["category"] or "general"] = r["n"]
+    silent: dict = {}
+    total: dict = {}
+    for r in store.db.execute(
+            "SELECT c.platform, COUNT(*) n, SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM memories m WHERE m.source_ref=c.id)"
+            " THEN 1 ELSE 0 END) silent FROM conversations c JOIN extracted e ON e.conversation_id=c.id"
+            " WHERE c.user_count >= ? GROUP BY c.platform", (min_user_messages,)):
+        total[r["platform"]] = r["n"]
+        silent[r["platform"]] = r["silent"] or 0
+    return {"categories": cats, "empty_categories": [c for c in CATEGORIES if not cats.get(c)],
+            "conversations": total, "silent_conversations": silent, "min_user_messages": min_user_messages}
+
+
+def format_coverage(cov: dict) -> str:
+    lines = ["Coverage / 覆盖率"]
+    lines.append("  memories by category: " + ", ".join(f"{c} {n}" for c, n in cov["categories"].items()
+                                                         if c in CATEGORIES))
+    if cov["empty_categories"]:
+        lines.append("  ! empty: " + ", ".join(cov["empty_categories"])
+                     + "  (try `ctxport extract --llm`, or add facts with `ctxport memories add`)")
+    for p, n in sorted(cov["conversations"].items()):
+        k = cov["silent_conversations"].get(p, 0)
+        lines.append(f"  {p}: {k} of {n} conversations with ≥{cov['min_user_messages']} of your messages gave nothing"
+                     + (f" ({k * 100 // n}%)" if n else ""))
+    return "\n".join(lines)

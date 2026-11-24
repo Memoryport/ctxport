@@ -34,16 +34,31 @@ CREATE TABLE IF NOT EXISTS extracted(
 
 FTS_SCHEMA = """
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(text, content='messages', content_rowid='id', tokenize='trigram');
-CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages WHEN new.kind IN ('message','artifact') BEGIN
   INSERT INTO messages_fts(rowid, text) VALUES (new.id, new.text); END;
-CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages WHEN old.kind IN ('message','artifact') BEGIN
   INSERT INTO messages_fts(messages_fts, rowid, text) VALUES('delete', old.id, old.text); END;
-CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
-  INSERT INTO messages_fts(messages_fts, rowid, text) VALUES('delete', old.id, old.text);
+CREATE TRIGGER IF NOT EXISTS messages_au_del AFTER UPDATE ON messages WHEN old.kind IN ('message','artifact') BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, text) VALUES('delete', old.id, old.text); END;
+CREATE TRIGGER IF NOT EXISTS messages_au_ins AFTER UPDATE ON messages WHEN new.kind IN ('message','artifact') BEGIN
   INSERT INTO messages_fts(rowid, text) VALUES (new.id, new.text); END;
 """
 
 DIALOGUE_KINDS = ("message",)
+# Only these kinds go into the full-text index; tool output and reasoning are searched with LIKE when asked for.
+FTS_KINDS = ("message", "artifact")
+# Tool output longer than this keeps only its first and last TOOL_KEEP characters (CTXPORT_KEEP_FULL_TOOLS=1 or
+# --keep-full-tools keeps everything). Tool output is excluded from migrations, extraction and default search, and
+# on coding assistants it is most of the database.
+TOOL_KEEP = 2048
+TOOL_KINDS = ("tool_call", "tool_result")
+
+
+def trim_tool_text(text: str, keep: int = TOOL_KEEP) -> str:
+    if not text or len(text) <= 2 * keep + 200:
+        return text
+    omitted = len(text) - 2 * keep
+    return f"{text[:keep]}\n…[ctxport: {omitted:,} characters omitted]…\n{text[-keep:]}"
 
 # Database layout version, kept in SQLite's `PRAGMA user_version`. Version 1 is the layout in SCHEMA above
 # (databases from 0.1.0 have user_version 0 and already match it). To change the layout:
@@ -51,8 +66,16 @@ DIALOGUE_KINDS = ("message",)
 #   2. add MIGRATIONS[new_version] = SQL that upgrades a database of the previous version (ALTER TABLE ...),
 #   3. update SCHEMA so brand-new databases are created in the new layout directly.
 # Migrations run in order, each in its own transaction, the next time the store is opened.
-SCHEMA_VERSION = 1
-MIGRATIONS: dict = {}
+SCHEMA_VERSION = 2
+MIGRATIONS: dict = {
+    # 2: the full-text index covers dialogue only (FTS_KINDS); the triggers are recreated by FTS_SCHEMA and the
+    #    index is rebuilt once after the migration.
+    2: """
+DROP TRIGGER IF EXISTS messages_ai;
+DROP TRIGGER IF EXISTS messages_ad;
+DROP TRIGGER IF EXISTS messages_au;
+""",
+}
 
 
 class NewerDatabase(RuntimeError):
@@ -144,12 +167,16 @@ class Store:
             os.close(os.open(self.path, os.O_WRONLY | os.O_CREAT, 0o600))
         # Raw source JSON roughly triples the DB size; keep it only when asked (--keep-raw / CTXPORT_STORE_RAW=1).
         self.store_raw = store_raw if store_raw is not None else os.environ.get("CTXPORT_STORE_RAW") == "1"
+        self.keep_full_tools = os.environ.get("CTXPORT_KEEP_FULL_TOOLS") == "1"
+        self._rebuild_fts = False
         self.db = sqlite3.connect(str(self.path))
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA foreign_keys=ON")
         self._migrate()
         self.fts = self._init_fts()
+        if self.fts and self._rebuild_fts:
+            self.rebuild_fts()
         self.db.commit()
         for suffix in ("", "-wal", "-shm"):
             p = Path(str(self.path) + suffix)
@@ -173,6 +200,8 @@ class Store:
             self.db.execute(f"PRAGMA user_version = {int(v)}")
             self.db.commit()
         for target in range(v + 1, SCHEMA_VERSION + 1):
+            if target == 2:
+                self._rebuild_fts = True
             try:
                 self.db.execute("BEGIN")
                 for stmt in _split_sql(MIGRATIONS[target]):
@@ -182,6 +211,13 @@ class Store:
             except BaseException:
                 self.db.rollback()
                 raise
+
+    def rebuild_fts(self) -> None:
+        """Re-index dialogue messages only (FTS_KINDS)."""
+        kinds = ",".join(f"'{k}'" for k in FTS_KINDS)
+        self.db.execute("INSERT INTO messages_fts(messages_fts) VALUES('delete-all')")
+        self.db.execute(f"INSERT INTO messages_fts(rowid, text) SELECT id, text FROM messages WHERE kind IN ({kinds})")
+        self.db.commit()
 
     def _init_fts(self) -> bool:
         try:
@@ -230,7 +266,10 @@ class Store:
         rows = []
         for b, msgs in enumerate([main] + list(conv.branches)):
             for i, m in enumerate(msgs):
-                rows.append((cid, b, i, m.id, m.parent_id, m.role, m.kind, m.text or "", m.model, m.created_at,
+                text = m.text or ""
+                if m.kind in TOOL_KINDS and not self.keep_full_tools:
+                    text = trim_tool_text(text)
+                rows.append((cid, b, i, m.id, m.parent_id, m.role, m.kind, text, m.model, m.created_at,
                              _j(m.meta), m.raw if self.store_raw else None))
         self.db.executemany(
             "INSERT INTO messages(conversation_id,branch,idx,msg_id,parent_id,role,kind,text,model,created_at,meta,raw)"
@@ -305,7 +344,8 @@ class Store:
             return []
         kind_sql = f"m.kind IN ({','.join('?' * len(kinds))})"
         args: list = []
-        use_fts = self.fts and all(len(t) >= 3 for t in terms)
+        # the index holds dialogue only; tool output / reasoning searches scan with LIKE
+        use_fts = self.fts and all(len(t) >= 3 for t in terms) and set(kinds) <= set(FTS_KINDS)
         if use_fts:
             fts_q = " AND ".join('"' + t.replace('"', '""') + '"' for t in terms)
             sql = ("SELECT m.*, c.title, c.platform FROM messages_fts f JOIN messages m ON m.id=f.rowid "
@@ -448,3 +488,50 @@ class Store:
             out["memories"][r[0]] = r[1]
         out["warnings"] = self.db.execute("SELECT COALESCE(SUM(warnings),0) FROM sources").fetchone()[0]
         return out
+
+    # ------------------------------------------------------------ disk usage
+    def size_report(self) -> dict:
+        """File size, free pages, and stored text bytes per platform and kind (no dbstat needed)."""
+        page = self.db.execute("PRAGMA page_size").fetchone()[0]
+        pages = self.db.execute("PRAGMA page_count").fetchone()[0]
+        free = self.db.execute("PRAGMA freelist_count").fetchone()[0]
+        files = {}
+        for suffix in ("", "-wal"):
+            f = Path(str(self.path) + suffix)
+            if f.exists():
+                files[suffix or "db"] = f.stat().st_size
+        by: dict = {}
+        for r in self.db.execute(
+                "SELECT c.platform, m.kind, COUNT(*) n, SUM(LENGTH(CAST(m.text AS BLOB))) b,"
+                " SUM(LENGTH(CAST(COALESCE(m.raw, '') AS BLOB))) raw"
+                " FROM messages m JOIN conversations c ON c.id=m.conversation_id GROUP BY c.platform, m.kind"):
+            d = by.setdefault(r["platform"], {})
+            group = "dialogue" if r["kind"] in FTS_KINDS else ("tools" if r["kind"] in TOOL_KINDS else "other")
+            d[group] = d.get(group, 0) + (r["b"] or 0)
+            if r["raw"]:
+                d["raw"] = d.get("raw", 0) + r["raw"]
+        trimmable = self.db.execute(
+            f"SELECT COUNT(*) FROM messages WHERE kind IN ({','.join('?' * len(TOOL_KINDS))}) AND LENGTH(text) > ?",
+            (*TOOL_KINDS, 2 * TOOL_KEEP + 200)).fetchone()[0]
+        return {"path": str(self.path), "files": files, "page_size": page, "pages": pages, "free_pages": free,
+                "free_ratio": (free / pages) if pages else 0.0, "text_bytes": by, "trimmable_tool_messages": trimmable}
+
+    def trim_tool_output(self) -> int:
+        """Apply TOOL_KEEP trimming to tool output stored by older versions. Returns rows changed."""
+        n = 0
+        rows = self.db.execute(
+            f"SELECT id, text FROM messages WHERE kind IN ({','.join('?' * len(TOOL_KINDS))}) AND LENGTH(text) > ?",
+            (*TOOL_KINDS, 2 * TOOL_KEEP + 200)).fetchall()
+        for r in rows:
+            self.db.execute("UPDATE messages SET text=? WHERE id=?", (trim_tool_text(r["text"]), r["id"]))
+            n += 1
+        self.db.commit()
+        return n
+
+    def compact(self) -> None:
+        """Merge full-text index segments, give free pages back to the file system and shrink the WAL."""
+        if self.fts:
+            self.db.execute("INSERT INTO messages_fts(messages_fts) VALUES('optimize')")
+            self.db.commit()
+        self.db.execute("VACUUM")
+        self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")

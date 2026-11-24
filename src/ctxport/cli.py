@@ -14,7 +14,7 @@ from .adapters._render import render_message_md, render_transcript, visible
 from .adapters.base import ExportOptions
 from .models import MemoryItem
 from .redact import redact
-from .store import AmbiguousId, NewerDatabase, Store, default_home
+from .store import TOOL_KEEP, AmbiguousId, NewerDatabase, Store, default_home
 from .utils import fmt_time, parse_since, write_managed
 
 
@@ -33,6 +33,8 @@ def info(msg: str) -> None:
 def open_store(args) -> Store:
     if getattr(args, "keep_raw", False):
         os.environ["CTXPORT_STORE_RAW"] = "1"
+    if getattr(args, "keep_full_tools", False):
+        os.environ["CTXPORT_KEEP_FULL_TOOLS"] = "1"
     return Store(Path(args.db).expanduser() if getattr(args, "db", None) else None)
 
 
@@ -72,9 +74,26 @@ def cmd_sync(args) -> int:
         for r in reports:
             _print_report(r)
         if args.extract:
-            from .extract import run_extract
+            from .extract import coverage_report, format_coverage, run_extract
             info(f"extract: {run_extract(s, progress=info)}")
+            info(format_coverage(coverage_report(s)))
+        _hint_compact(s)
     return 0
+
+
+def _fmt_bytes(n: float) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} GB"
+
+
+def _hint_compact(s: Store) -> None:
+    r = s.size_report()
+    if r["pages"] > 256 and (r["free_ratio"] > 0.25 or r["trimmable_tool_messages"] > 100):
+        info(f"tip: {r['free_ratio']:.0%} of the database is free space and {r['trimmable_tool_messages']} tool outputs "
+             "can be trimmed; `ctxport compact` makes the file smaller.")
 
 
 def cmd_import(args) -> int:
@@ -98,10 +117,12 @@ def cmd_extract(args) -> int:
     except RemoteNotAllowed as e:
         info(str(e))
         return 2
+    from .extract import coverage_report, format_coverage
     with open_store(args) as s:
         st = run_extract(s, llm, platform=args.platform, days=args.days, limit=args.limit, progress=info)
         info(f"extract[{st['method']}]: {st['conversations']} conversations processed, {st['skipped']} already done, "
              f"{st['new']} new candidates. Review with `ctxport memories edit`.")
+        info(format_coverage(coverage_report(s)))
     return 0
 
 
@@ -113,6 +134,11 @@ def cmd_memories(args) -> int:
             status = None if args.all else (("accepted", "candidate") if args.candidates else ("accepted",))
             for m in s.memories(status=status, platform=args.platform):
                 print(f"{m.id}  [{m.status[:4]}] {m.scope:>10} {m.category:<18} {redact(m.text)[:160]}")
+            return 0
+        if a == "coverage":
+            from .extract import coverage_report, format_coverage
+            cov = coverage_report(s)
+            print(json.dumps(cov, ensure_ascii=False, indent=2) if args.json else format_coverage(cov))
             return 0
         if a == "add":
             text = " ".join(args.text)
@@ -362,8 +388,35 @@ def cmd_profile(args) -> int:
     return 0
 
 
+def cmd_compact(args) -> int:
+    with open_store(args) as s:
+        before = s.size_report()
+        trimmed = 0 if args.keep_tools else s.trim_tool_output()
+        s.compact()
+        after = s.size_report()
+    b, a = sum(before["files"].values()), sum(after["files"].values())
+    print(f"{_fmt_bytes(b)} → {_fmt_bytes(a)} (saved {_fmt_bytes(max(0, b - a))}); "
+          f"{trimmed} tool outputs trimmed to their first and last {TOOL_KEEP // 1024} KB")
+    return 0
+
+
+def _print_size(s: Store) -> None:
+    r = s.size_report()
+    total = sum(r["files"].values())
+    print(f"Store: {r['path']}  {_fmt_bytes(total)} on disk, {r['free_ratio']:.0%} free space\n")
+    print(f"{'platform':16} {'dialogue':>10} {'tools':>10} {'other':>10} {'raw':>10}")
+    for p, d in sorted(r["text_bytes"].items()):
+        print(f"{p:16} " + " ".join(f"{_fmt_bytes(d.get(k, 0)):>10}" for k in ("dialogue", "tools", "other", "raw")))
+    print("\n(text sizes before the search index; the index is roughly 1.3× the dialogue text)")
+    if r["trimmable_tool_messages"] or r["free_ratio"] > 0.1:
+        print(f"`ctxport compact` would trim {r['trimmable_tool_messages']} tool outputs and reclaim free space.")
+
+
 def cmd_stats(args) -> int:
     with open_store(args) as s:
+        if args.size:
+            _print_size(s)
+            return 0
         st = s.stats()
         if args.json:
             print(json.dumps(st, ensure_ascii=False, indent=2, default=str))
@@ -442,6 +495,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--version", action="version", version=f"ctxport {__version__}")
     ap.add_argument("--db", help=f"store path (default {default_home() / 'ctxport.db'}; or set CTXPORT_HOME)")
     ap.add_argument("--keep-raw", action="store_true", help="also store raw source JSON for each message")
+    ap.add_argument("--keep-full-tools", action="store_true",
+                    help=f"store tool output in full (default: first and last {TOOL_KEEP // 1024} KB of long outputs)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("platforms", help="supported platforms and what was detected here").set_defaults(fn=cmd_platforms)
@@ -471,6 +526,8 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--candidates", action="store_true", help="include candidates")
     q.add_argument("--all", action="store_true", help="include rejected too")
     q.add_argument("--platform")
+    q = msub.add_parser("coverage", help="which categories are empty, which conversations gave nothing")
+    q.add_argument("--json", action="store_true")
     q = msub.add_parser("add")
     q.add_argument("text", nargs="+")
     q.add_argument("--category", default="general")
@@ -541,8 +598,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_llm_flags(p)
     p.set_defaults(fn=cmd_profile)
 
+    p = sub.add_parser("compact", help="make the database smaller: trim tool output, merge the index, VACUUM")
+    p.add_argument("--keep-tools", action="store_true", help="don't trim stored tool output, only reclaim space")
+    p.set_defaults(fn=cmd_compact)
+
     p = sub.add_parser("stats", help="per-platform statistics")
     p.add_argument("--json", action="store_true")
+    p.add_argument("--size", action="store_true", help="disk usage by platform: dialogue, tool output, raw JSON")
     p.set_defaults(fn=cmd_stats)
 
     p = sub.add_parser("mcp-config", help="print MCP configuration for a client")
