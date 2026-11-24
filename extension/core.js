@@ -150,6 +150,7 @@
         if (detailed.length) extra.projects = detailed;
       } catch (e) { /* optional */ }
       try { const m = await get(`${base}/memory`); if (m) extra.memories = m; } catch (e) { /* optional */ }
+      if (Object.keys(extra).length) extra.account = org.uuid;  // stored per organisation
       const r = await flush(io, "claude-ai", buf, Object.keys(extra).length ? extra : null);
       sent += (r && r.conversations) || 0;
     }

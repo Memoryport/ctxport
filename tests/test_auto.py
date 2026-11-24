@@ -263,6 +263,29 @@ def test_inbox_is_picked_up_by_sync(tmp_path, paired):
     s.close()
 
 
+def test_claude_orgs_keep_their_own_account_data(tmp_path, paired):
+    """Two Claude.ai organisations: the second sync must not overwrite the first one's projects/memories."""
+    port, token = paired
+    for org, name in (("org-1", "Thesis"), ("org-2", "Work")):
+        assert _post(port, "/ingest", {"platform": "claude-ai", "conversations": [], "account": org,
+                                       "projects": [{"uuid": f"p-{org}", "name": name,
+                                                     "prompt_template": f"- rule for {name}"}]},
+                     token=token)[0] == 200
+    inbox = tmp_path / "ctxport_home" / "inbox" / "claude-ai"
+    assert (inbox / "_account.org-1.json").exists() and (inbox / "_account.org-2.json").exists()
+    # a fresh store re-imports both organisations' projects from the inbox
+    s = Store(tmp_path / "fresh.db")
+    pipeline.sync(s, only=["claude-ai"])
+    scopes = {m.scope for m in s.memories(status=None)}
+    assert {"project:Thesis", "project:Work"} <= scopes
+    s.close()
+    # a hostile account id can't escape the inbox directory
+    assert _post(port, "/ingest", {"platform": "claude-ai", "conversations": [], "account": "../../x",
+                                   "projects": [{"uuid": "p", "name": "n", "prompt_template": "- y"}]},
+                 token=token)[0] == 200
+    assert all(f.parent == inbox for f in (tmp_path / "ctxport_home").rglob("_account*.json"))
+
+
 @pytest.mark.skipif(not shutil.which("node"), reason="node not installed")
 def test_extension_core_in_node():
     test = Path(__file__).parent.parent / "extension" / "test" / "core.test.js"

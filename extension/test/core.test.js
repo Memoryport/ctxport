@@ -87,6 +87,7 @@ async function testClaude() {
   assert.strictEqual(all[0]._ctxport_stamp, "x2");
   assert.ok(!io.calls.some((c) => c.url.includes("/o2/")), "non-chat orgs skipped");
   assert.strictEqual(io.pushed[io.pushed.length - 1].projects[0].prompt_template, "cite sources");
+  assert.strictEqual(io.pushed[io.pushed.length - 1].account, "o1", "account data is tagged with its organisation");
 }
 
 function el(tag, text, children, attrs) {

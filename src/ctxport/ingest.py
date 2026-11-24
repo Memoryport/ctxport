@@ -188,7 +188,10 @@ class IngestState:
                 written.append(p)
             extras = {k: v for k, v in payload.items() if k in ("memories", "custom_instructions", "projects") and v}
             if extras:
-                p = d / "_account.json"
+                # One file per account, so a second Claude.ai organisation doesn't overwrite the first one's
+                # projects and memories.
+                account = payload.get("account") if isinstance(payload.get("account"), str) else ""
+                p = d / (f"_account.{_safe_name(account)}.json" if account else "_account.json")
                 old = {}
                 if p.exists():
                     try:

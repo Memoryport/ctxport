@@ -4,6 +4,7 @@ Adding a platform = one new module in this package with a subclass decorated by 
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -29,6 +30,15 @@ def inbox_units(root: Path) -> list:
     if root.is_file():
         return [root]
     return sorted(p for p in root.glob("*.json") if p.name != "_index.json")
+
+
+_ACCOUNT_FILE = re.compile(r"^_account(\.[A-Za-z0-9._-]+)?\.json$")
+
+
+def is_account_file(path) -> bool:
+    """`_account.json`, or `_account.<account id>.json` when one platform login has several accounts
+    (e.g. Claude.ai organisations): memories, custom instructions and projects, not a conversation."""
+    return bool(_ACCOUNT_FILE.match(Path(path).name))
 
 
 def is_inbox(path: Path) -> bool:
