@@ -83,3 +83,10 @@ pytest -q
 ```
 
 Commits and PRs must not contain real user data.
+
+## Releasing
+
+1. Bump `__version__` in `src/ctxport/__init__.py` and `version` in `extension/manifest.json` (they must match).
+2. Move the `Unreleased` entries in `CHANGELOG.md` under the new version and date.
+3. Merge, then tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
+   `.github/workflows/release.yml` checks the versions, builds, smoke-tests the wheel and publishes to PyPI.
