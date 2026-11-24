@@ -167,6 +167,12 @@ def test_ingest_server_pairing_and_import(tmp_path, server):
     assert _post(port, "/known?platform=chatgpt", origin="chrome-extension://otherextensionid", token=token)[0] == 403
     code, k = _post(port, "/known?platform=chatgpt", token=token)
     assert k["known"] == {"cg-1": "2026-01-02T00:00:00Z"}
+    # Chromium sends no Origin on an extension's GET requests: the token alone must be enough there
+    assert _post(port, "/ping", origin=None, token=token)[1]["authorized"]
+    assert _post(port, "/known?platform=chatgpt", origin=None, token=token)[0] == 200
+    assert _post(port, "/known?platform=chatgpt", origin=None, token="nope")[0] == 403
+    # a web page carrying a stolen token is still refused because of its Origin
+    assert _post(port, "/known?platform=chatgpt", origin="https://evil.example", token=token)[0] == 403
     s = Store(tmp_path / "ctxport_home" / "ctxport.db")
     c = s.get_conversation("chatgpt:cg-1")
     assert len(c.branches) == 1 and c.title == "Induction"

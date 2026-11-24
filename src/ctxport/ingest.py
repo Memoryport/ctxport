@@ -125,12 +125,22 @@ def try_pair(origin: str, code: str) -> Optional[str]:
 
 
 def authorized(origin: str, token: str) -> bool:
-    if not _EXT_ORIGIN.match(origin or "") or not token:
+    """The token is the credential; the Origin is an extra check whenever the browser sends one.
+
+    Chromium does not attach an Origin header to GET requests an extension makes to a host it has
+    permission for, so a paired extension's /ping and /known arrive without one. Web pages always send
+    an Origin on cross-origin requests, so a present Origin must be the paired extension's.
+    """
+    if not token:
+        return False
+    if origin and not _EXT_ORIGIN.match(origin):
         return False
     p = pairing()
     if not p:
         return False
-    return hmac.compare_digest(p["origin"], origin) and hmac.compare_digest(p["token_sha256"], _sha256(token))
+    if origin and not hmac.compare_digest(p["origin"], origin):
+        return False
+    return hmac.compare_digest(p["token_sha256"], _sha256(token))
 
 
 def _safe_name(s: str) -> str:
