@@ -5,13 +5,14 @@ conversations.json (or sharded conversations-000.json …): list of
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from ..models import Conversation, ImportResult, MemoryItem, Message, OutputFile
 from ..utils import (Bundle, compact_json, is_json_name, is_metadata_string, json_strings, parse_time, read_json_file,
                      sanitize_raw)
 from ._render import render_memories_plain
-from .base import ExportOptions, Exporter, Importer, inbox_units, is_account_file, is_inbox, register
+from .base import ExportOptions, Exporter, Importer, downloads_dir, export_zips, inbox_units, is_account_file, is_inbox, register
 
 CONV_FILE = r"(^|/)conversations(-\d+)?\.json$"
 
@@ -177,12 +178,15 @@ class ChatGPTImporter(Importer):
                   "Or the official export: Settings → Data controls → Export data, then pass the .zip.")
 
     def default_roots(self) -> list:
+        # the browser extension's inbox, plus official ChatGPT export zips saved in the Downloads folder
         from ..ingest import inbox_dir
-        return [inbox_dir(self.name)]
+        return [inbox_dir(self.name), downloads_dir()]
 
     def discover(self, root: Path) -> list:
         if Path(root).is_dir() and is_inbox(Path(root) / "x"):
             return inbox_units(root)
+        if Path(root).is_dir() and Path(root) == downloads_dir():
+            return export_zips(root, lambda names: "chat.html" in names and any(re.fullmatch(r"conversations(-\d+)?\.json", n) for n in names))
         return [Path(root)]
 
     def load(self, unit: Path) -> ImportResult:

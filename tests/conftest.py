@@ -16,6 +16,7 @@ def isolated_home(tmp_path, monkeypatch):
     monkeypatch.setenv("GEMINI_CLI_HOME", str(tmp_path / "no_gemini"))
     monkeypatch.setenv("CHERRY_STUDIO_HOME", str(tmp_path / "no_cherry"))
     monkeypatch.setenv("CHATBOX_HOME", str(tmp_path / "no_chatbox"))
+    monkeypatch.setenv("CTXPORT_DOWNLOADS", str(tmp_path / "no_downloads"))
     monkeypatch.delenv("CTXPORT_LLM_BASE_URL", raising=False)
     monkeypatch.delenv("CTXPORT_STORE_RAW", raising=False)
     yield

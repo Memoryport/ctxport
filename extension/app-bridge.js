@@ -11,6 +11,13 @@
     const m = ev.data;
     if (!m || m.source !== "ctxport-app") return;
     if (m.action === "hello") return reply({ type: "hello" });
+    if (m.action === "request-export") {
+      chrome.runtime.sendMessage({ type: "request-export" }, (r) => {
+        const err = chrome.runtime.lastError;
+        reply({ id: m.id, ...(err ? { ok: false, error: err.message } : (r || { ok: false, error: "no response" })) });
+      });
+      return;
+    }
     if (m.action === "push-memory" && TARGETS.has(m.target)) {
       chrome.runtime.sendMessage({ type: "push-memory", target: m.target }, (r) => {
         const err = chrome.runtime.lastError;

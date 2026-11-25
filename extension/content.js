@@ -14,6 +14,10 @@
   if (typeof globalThis.__ctxportAlive === "function" && globalThis.__ctxportAlive()) return;
   globalThis.__ctxportAlive = () => { try { return !!chrome.runtime.id; } catch (e) { return false; } };
   let running = false;
+  // The pause switch in the popup (chrome.storage "paused"): a running sync stops at its next checkpoint.
+  let paused = false;
+  chrome.storage.local.get({ paused: false }, (c) => { paused = !!c.paused; });
+  chrome.storage.onChanged.addListener((ch) => { if (ch.paused) paused = !!ch.paused.newValue; });
 
   function bg(msg) {
     return new Promise((resolve, reject) => {
@@ -29,6 +33,7 @@
     return {
       full,
       concurrency,
+      shouldStop: () => paused,
       // Timers in a background tab are throttled to about one wake-up per minute, which turned a 30 s
       // rate-limit pause into several minutes. The extension's background worker keeps exact time.
       sleep: (ms) => bg({ type: "sleep", ms }).catch(() => new Promise((r) => setTimeout(r, ms))),
@@ -78,6 +83,11 @@
         .catch((e) => sendResponse({ ok: false, error: String(e.message || e), status: e.status }));
       return true;
     }
+    if (msg && msg.type === "request-export" && platform === "chatgpt") {
+      Core.requestChatGPTExport(makeIO(false)).then((r) => sendResponse(r))
+        .catch((e) => sendResponse({ ok: false, error: String(e.message || e), status: e.status }));
+      return true;
+    }
     if (msg && msg.type === "write-memory" && msg.platform === platform) {
       const job = platform === "chatgpt" ? Core.writeChatGPTMemory(makeIO(false), msg.text)
         : Core.fillMemoryForm(document, window, msg.text, {});
@@ -95,8 +105,8 @@
   // Automatic incremental sync when you open the site (default on, at most every 6 hours).
   // Gemini tabs that ctxport opens for scraping carry #ctxport-scrape and must not start another sync.
   if (location.hash.includes("ctxport-scrape")) sessionStorage.setItem("ctxport-scrape-tab", "1");
-  chrome.storage.local.get({ autoSync: true }, async (cfg) => {
-    if (!cfg.autoSync) return;
+  chrome.storage.local.get({ autoSync: true, paused: false }, async (cfg) => {
+    if (!cfg.autoSync || cfg.paused) return;
     if (sessionStorage.getItem("ctxport-scrape-tab")) return;
     try {
       const up = await bg({ type: "ping" });

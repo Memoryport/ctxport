@@ -136,8 +136,13 @@ async function geminiScrape(list, full) {
   const free = tabs.map((t) => t.id);
   let imported = 0, done = 0;
   const buf = [];
+  const stopFlag = { stop: false };
+  const onPause = (ch) => { if (ch.paused && ch.paused.newValue) stopFlag.stop = true; };
+  chrome.storage.onChanged.addListener(onPause);
   try {
+    if (await isPaused()) stopFlag.stop = true;
     await CtxportCore.pool(todo, nTabs, async (c) => {
+      if (stopFlag.stop) throw Object.assign(new Error("paused"), { fatal: true, paused: true });
       const tab = { id: free.pop() };
       try {
         await chrome.tabs.update(tab.id, { url: `https://gemini.google.com/app/${c.id}#ctxport-scrape` });
@@ -170,6 +175,7 @@ async function geminiScrape(list, full) {
       imported += r.conversations || 0;
     }
   } finally {
+    chrome.storage.onChanged.removeListener(onPause);
     for (const t of tabs) chrome.tabs.remove(t.id).catch(() => {});
   }
   return { platform: "gemini-web", total: list.length, fetched: done, imported };
@@ -199,7 +205,15 @@ async function ensureContentScript(tabId) {
 }
 
 // Find (or quietly open) a tab of the site and ask its content script to sync.
+async function isPaused() {
+  return !!(await chrome.storage.local.get({ paused: false })).paused;
+}
+
 async function syncSite(platform, full) {
+  if (await isPaused()) {
+    await setStatus(platform, { state: "paused" });
+    return { platform, paused: true };
+  }
   const site = SITES[platform];
   let tabs = await chrome.tabs.query({ url: site.match });
   tabs = tabs.filter((t) => !(t.url || "").includes("ctxport-scrape"));
@@ -227,10 +241,19 @@ async function syncSite(platform, full) {
       }
     }
     if (!r || !r.ok) throw Object.assign(new Error((r && r.error) || "no response"), { status: r && r.status });
+    if (r.result && r.result.busy) {
+      await setStatus(platform, { state: "running" });
+      return r.result;
+    }
     await setStatus(platform, { state: "done", result: r.result });
     await log(platform, "done: " + JSON.stringify(r.result));
     return r.result;
   } catch (e) {
+    if (/paused/.test(String(e && e.message)) || await isPaused()) {
+      await setStatus(platform, { state: "paused" });
+      await log(platform, "paused — saved conversations are kept; press 继续 to resume");
+      return { platform, paused: true };
+    }
     const msg = e.status === 401 || e.status === 403 ? "not logged in — open the site and sign in" : e.message;
     await setStatus(platform, { state: "error", error: msg });
     await log(platform, "error: " + msg);
@@ -276,6 +299,30 @@ async function pushMemory(target, sender) {
   return r || { ok: false, error: "no response" };
 }
 
+// Ask ChatGPT for its official export (e-mailed zip). Allowed from the popup or the local ctxport app page.
+async function requestExport(sender) {
+  const from = (sender && (sender.url || (sender.tab && sender.tab.url))) || "";
+  if (sender && sender.tab && !/^http:\/\/(127\.0\.0\.1|localhost):\d+\//.test(from)) {
+    return { ok: false, error: "only the popup or the local ctxport app may ask" };
+  }
+  let tab = (await chrome.tabs.query({ url: SITES.chatgpt.match })).find((t) => !(t.url || "").includes("ctxport-scrape"));
+  if (!tab) {
+    tab = await chrome.tabs.create({ url: SITES.chatgpt.url, active: false });
+    await waitTabComplete(tab.id);
+  }
+  await ensureContentScript(tab.id);
+  const r = await sendToTab(tab.id, { type: "request-export" });
+  if (!r || !r.ok) {
+    // fall back to the settings page so the user can press the button themselves
+    await chrome.tabs.update(tab.id, { url: "https://chatgpt.com/#settings/DataControls", active: true });
+    const err = (r && r.error) || "no response";
+    await log("chatgpt", "official export request failed: " + err + " — opened Settings → Data controls");
+    return { ok: false, error: `自动发起失败（${err}），已打开 ChatGPT 的“数据管理”页面，请点“导出数据”` };
+  }
+  await log("chatgpt", "official export requested — check your e-mail");
+  return r;
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     switch (msg && msg.type) {
@@ -301,6 +348,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return syncAll(!!msg.full, msg.platforms);
       case "push-memory":
         return pushMemory(msg.target, sender);
+      case "request-export":
+        return requestExport(sender);
       default:
         return { error: "unknown message" };
     }
@@ -316,7 +365,7 @@ async function scheduleAlarm() {
 }
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name !== "ctxport-sync") return;
-  server("/ping").then((r) => { if (r.authorized) return syncAll(false); }).catch(() => {});
+  isPaused().then((p) => p ? null : server("/ping").then((r) => { if (r && r.authorized) return syncAll(false); })).catch(() => {});
 });
 chrome.runtime.onInstalled.addListener(scheduleAlarm);
 chrome.runtime.onStartup.addListener(scheduleAlarm);

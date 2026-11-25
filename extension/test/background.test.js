@@ -81,7 +81,16 @@ async function testKeepAliveSleep() {
   assert.ok(pings >= 1, "touches an extension API so the worker stays alive");
 }
 
+async function testPausedSkipsSync() {
+  const { ctx, chrome } = load();
+  chrome.data.paused = true;
+  const r = JSON.parse(JSON.stringify(await ctx.syncSite("chatgpt", false)));
+  assert.deepStrictEqual(r, { platform: "chatgpt", paused: true });
+  assert.strictEqual(chrome.data.status.chatgpt.state, "paused");
+}
+
 (async () => {
+  await testPausedSkipsSync();
   await testKeepAliveSleep();
   await testSyncAllRunsSitesTogether();
   await testConcurrentLogAndStatus();

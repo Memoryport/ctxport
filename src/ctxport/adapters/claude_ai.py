@@ -14,7 +14,7 @@ from ..utils import (Bundle, compact_json, is_json_name, is_metadata_string, par
                      text_of)
 from ._instruction import parse_instruction_text
 from ._render import render_memories_plain
-from .base import ExportOptions, Exporter, Importer, inbox_units, is_account_file, is_inbox, register
+from .base import ExportOptions, Exporter, Importer, downloads_dir, export_zips, inbox_units, is_account_file, is_inbox, register
 
 
 def convert_message(cm: dict) -> list:
@@ -167,12 +167,15 @@ class ClaudeAIImporter(Importer):
                   "Or the official export: Settings → Privacy → Export data, then pass the .zip.")
 
     def default_roots(self) -> list:
+        # the browser extension's inbox, plus official Claude.ai export zips saved in the Downloads folder
         from ..ingest import inbox_dir
-        return [inbox_dir(self.name)]
+        return [inbox_dir(self.name), downloads_dir()]
 
     def discover(self, root: Path) -> list:
         if Path(root).is_dir() and is_inbox(Path(root) / "x"):
             return inbox_units(root)
+        if Path(root).is_dir() and Path(root) == downloads_dir():
+            return export_zips(root, lambda names: "conversations.json" in names and "users.json" in names and "chat.html" not in names)
         return [Path(root)]
 
     def load(self, unit: Path) -> ImportResult:

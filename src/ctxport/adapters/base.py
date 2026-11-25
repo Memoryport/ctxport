@@ -48,6 +48,33 @@ def is_account_file(path) -> bool:
     return bool(_ACCOUNT_FILE.match(Path(path).name))
 
 
+def downloads_dir() -> Path:
+    """Where browsers save official export zips (override with CTXPORT_DOWNLOADS; "off" disables the scan)."""
+    import os
+    v = os.environ.get("CTXPORT_DOWNLOADS")
+    if v:
+        return Path(v).expanduser()
+    return Path.home() / "Downloads"
+
+
+def export_zips(root: Path, looks_like) -> list:
+    """Zip files directly in `root` whose file list matches an official export (only the zip directory is read)."""
+    import zipfile
+    root = Path(root)
+    if str(root) == "off" or not root.is_dir():
+        return []
+    out = []
+    for p in sorted(root.glob("*.zip")):
+        try:
+            with zipfile.ZipFile(p) as z:
+                names = {n.rsplit("/", 1)[-1] for n in z.namelist()}
+        except (zipfile.BadZipFile, OSError):
+            continue
+        if looks_like(names):
+            out.append(p)
+    return out
+
+
 def is_inbox(path: Path) -> bool:
     return Path(path).parent.parent.name == "inbox" or Path(path).parent.name == "inbox"
 

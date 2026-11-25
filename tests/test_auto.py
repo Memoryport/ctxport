@@ -366,3 +366,30 @@ def test_ingest_marks_only_imported_conversations_as_known(tmp_path, server):
     assert code == 200 and r["conversations"] == 1
     known = _post(port, "/known?platform=claude-ai", token=token)[1]["known"]
     assert known == {"ok-1": "2026-01-01T00:00:00Z"}  # bad-1 is sent again next time
+
+
+def test_official_exports_in_downloads_are_imported(tmp_path, monkeypatch):
+    import zipfile as _zf
+    dl = tmp_path / "Downloads"
+    dl.mkdir()
+    monkeypatch.setenv("CTXPORT_DOWNLOADS", str(dl))
+    src = fx.chatgpt_export(tmp_path)  # conversations-000.json, user.json, memories.json
+    with _zf.ZipFile(src) as z, _zf.ZipFile(dl / "4f2a-2026-11-25-chatgpt.zip", "w") as out:
+        for n in z.namelist():
+            out.writestr(n, z.read(n))
+        out.writestr("chat.html", "<html></html>")
+    csrc = fx.claude_ai_export(tmp_path)
+    with _zf.ZipFile(csrc) as z, _zf.ZipFile(dl / "data-2026-11-25.zip", "w") as out:
+        for n in z.namelist():
+            out.writestr(n, z.read(n))
+        out.writestr("users.json", "[]")
+    with _zf.ZipFile(dl / "holiday-photos.zip", "w") as out:
+        out.writestr("conversations.json", "[]")  # no export signature → ignored
+    (dl / "broken.zip").write_bytes(b"not a zip")
+    s = Store(tmp_path / "s.db")
+    reps = {r.platform: r for r in pipeline.sync(s, only=["chatgpt", "claude-ai"])}
+    assert reps["chatgpt"].units == 1 and s.get_conversation("chatgpt:cg-1").title == "Induction"
+    assert reps["claude-ai"].units == 1 and s.get_conversation("claude-ai:ca-1") is not None
+    again = {r.platform: r for r in pipeline.sync(s, only=["chatgpt", "claude-ai"])}
+    assert again["chatgpt"].skipped == 1 and again["claude-ai"].skipped == 1
+    s.close()

@@ -31,13 +31,34 @@
   // When one request is rate-limited (429), every parallel worker pauses until `gate.until`.
   const now = (io) => (io.now ? io.now() : Date.now());
 
+  // The pause switch: io.shouldStop() turns true → stop at the next checkpoint (saved data is kept).
+  function checkStop(io) {
+    if (io && typeof io.shouldStop === "function" && io.shouldStop()) {
+      throw Object.assign(new Error("paused"), { fatal: true, paused: true });
+    }
+  }
+
+  // Waits in short steps so a pause takes effect even during a long rate-limit wait.
+  async function sleepChecked(io, ms) {
+    const end = now(io) + ms;
+    while (now(io) < end) {
+      checkStop(io);
+      await io.sleep(Math.min(5000, end - now(io)));
+    }
+    checkStop(io);
+  }
+
   async function waitGate(io, gate) {
-    while (gate && gate.until > now(io)) await io.sleep(Math.min(5000, gate.until - now(io)));
+    while (gate && gate.until > now(io)) {
+      checkStop(io);
+      await io.sleep(Math.min(5000, gate.until - now(io)));
+    }
   }
 
   async function withRetry(io, fn, what, gate) {
     let wait = 2000;
     for (let attempt = 0; attempt < 6; attempt++) {
+      checkStop(io);
       await waitGate(io, gate);
       try {
         const r = await fn();
@@ -45,7 +66,7 @@
         return r;
       } catch (e) {
         const status = e && e.status;
-        if (status === 401 || status === 403) throw e;
+        if (status === 401 || status === 403 || (e && e.paused)) throw e;
         if (status === 404) return null;
         if (attempt === 5) throw e;
         const retryAfter = Number(e && e.retryAfter) > 0 ? Number(e.retryAfter) * 1000 : 0;
@@ -59,7 +80,7 @@
           gate.ok = 0;
         }
         io.log(`${what}: ${status || e.message || e} — retry in ${Math.round(pause / 1000)}s`);
-        await io.sleep(pause);
+        await sleepChecked(io, pause);
         wait *= 2;
       }
     }
@@ -89,6 +110,13 @@
           // browsers throttle timers in background tabs to about one per minute.
           await new Promise((r) => (gate.wake = gate.wake || []).push(r));
           continue;
+        }
+        try {
+          checkStop(io);
+        } catch (e) {
+          fatal = fatal || e;
+          if (gate) wakeAll(gate);
+          break;
         }
         const i = next++;
         try {
@@ -141,6 +169,7 @@
       // only when a page comes back with fewer than 100 items.
       let reported = null;
       for (let offset = 0, more = true; more; ) {
+        checkStop(io);
         const offs = Array.from({ length: Math.max(1, gate.cur) }, (_, k) => offset + k * 100);
         const pages = await Promise.all(offs.map((o) => get(url(o))));
         for (const p of pages) {
@@ -408,7 +437,16 @@
     return { ok: true, message: "已在页面里填好并点击了保存，请在页面上确认结果" };
   }
 
+  // ChatGPT's own "Export data" (Settings → Data controls): the full history arrives by e-mail as a zip, without
+  // the per-conversation rate limit. This only presses that button for the logged-in user.
+  async function requestChatGPTExport(io) {
+    const session = await io.getJSON("/api/auth/session");
+    if (!session || !session.accessToken) throw Object.assign(new Error("没有登录 ChatGPT"), { status: 401 });
+    await io.postJSON("/backend-api/accounts/data_export", {}, { Authorization: "Bearer " + session.accessToken });
+    return { ok: true, message: "已向 ChatGPT 发起官方导出：下载链接会发到你的邮箱。下载后运行 ctxport sync（或在 app 里刷新）会自动导入下载文件夹里的导出包。" };
+  }
+
   root.CtxportCore = { syncChatGPT, syncClaude, scrapeGeminiConversation, listGeminiConversations, geminiTodo,
-    GEMINI_RECENT_REFRESH, withRetry, pool, concurrency, makeGate, DEFAULT_CONCURRENCY,
-    mergeAbout, writeChatGPTMemory, fillMemoryForm };
+    GEMINI_RECENT_REFRESH, withRetry, pool, concurrency, makeGate, DEFAULT_CONCURRENCY, checkStop,
+    mergeAbout, writeChatGPTMemory, fillMemoryForm, requestChatGPTExport };
 })(typeof globalThis !== "undefined" ? globalThis : this);

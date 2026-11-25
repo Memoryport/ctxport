@@ -232,3 +232,11 @@ def test_app_distill_without_api_key(app, monkeypatch):
         _t.sleep(0.05)
     assert st["profile_exists"] and st["last_run"]["coverage"]["full"] == 1.0
     assert "chemistry teacher" in call(app, "/api/text?target=claude-ai")[1]["text"]
+
+
+def test_app_import_downloads(app, tmp_path, monkeypatch):
+    dl = tmp_path / "dl"
+    dl.mkdir()
+    monkeypatch.setenv("CTXPORT_DOWNLOADS", str(dl))
+    code, r = call(app, "/api/import-downloads", {})
+    assert code == 200 and r["chatgpt"]["zips"] == 0 and r["claude-ai"]["zips"] == 0

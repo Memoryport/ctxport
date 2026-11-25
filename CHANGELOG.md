@@ -28,6 +28,12 @@ All notable changes to ctxport are listed here. The format follows
   (`claude -p` / `codex exec`, resumable), `--agent folder` prepares a task folder (TASK.md, AGENTS.md, CLAUDE.md)
   for any agent, and the app has a copy/paste flow for ChatGPT / Claude on the web (optionally only the most recent
   50 / 200 conversations). The API path is now opt-in with `--api`.
+- One-click ChatGPT official export: the extension popup and `ctxport app` press "Export data" in the logged-in
+  ChatGPT tab (falling back to opening Settings → Data controls). Official ChatGPT and Claude.ai export zips saved in
+  the Downloads folder are detected by their file list and imported by `ctxport sync` (`CTXPORT_DOWNLOADS` to change
+  the folder, `off` to disable); conversations already synced by the extension are deduplicated by id.
+- Extension pause switch: stops a running sync at the next checkpoint (also during a long rate-limit wait; saved
+  conversations are kept), and skips auto-sync and scheduled syncs while paused. Turning it back on resumes.
 
 ### Changed
 - Re-syncing a conversation rewrites only the messages that changed. The browser extension sends a whole

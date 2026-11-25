@@ -156,6 +156,17 @@
     <div class="actions"><button class="primary" id="w-submit">提交这一批</button></div>
   </div>
 
+  <h2>ChatGPT 官方导出</h2>
+  <p class="sub">ChatGPT 对单个对话的读取有限速，对话很多时扩展同步会很慢。官方导出一次拿到全部：ChatGPT 把下载链接发到你的邮箱，下载后 ctxport 会自动认出“下载”文件夹里的导出包并导入，与扩展已同步的部分自动去重。</p>
+  <div class="grid">
+    <div class="panel card"><div class="top"><span class="name">ChatGPT</span><span class="badge">需要浏览器扩展</span></div>
+      <div class="meta">在你已登录的 ChatGPT 页面里替你点“导出数据”。</div>
+      <div class="actions"><button class="primary" id="x-request">一键发起官方导出</button></div></div>
+    <div class="panel card"><div class="top"><span class="name">下载文件夹</span><span class="badge">ChatGPT / Claude.ai</span></div>
+      <div class="meta">下载好官方导出 zip 后点这里，或下次同步时会自动导入。</div>
+      <div class="actions"><button id="x-import">检查下载文件夹并导入</button></div></div>
+  </div>
+
   <h2>编程 Agent</h2>
   <p class="sub">把已确认的记忆写进它们的指令文件。只改 ctxport 自己那一块，你原来写的内容不动，第一次写入前自动备份。</p>
   <div class="grid" id="agents"></div>
@@ -490,6 +501,20 @@ async function loadDistill() {
   if (st.running) setTimeout(loadDistill, 3000);
   else if (st.result) { loadOverview(); }
 }
+$("#x-request").onclick = () => run($("#x-request"), async () => {
+  if (!extReady) throw new Error("没有检测到浏览器扩展：请在 ChatGPT 网页 设置 → 数据管理 → 导出数据 手动发起");
+  const r = await askExtension("request-export");
+  if (!r.ok) throw new Error(r.error || "发起失败");
+  toast(r.message || "已发起，请查收邮件");
+});
+$("#x-import").onclick = () => run($("#x-import"), async () => {
+  const r = await api("/api/import-downloads", {});
+  const c = r.chatgpt, a = r["claude-ai"];
+  toast(c.zips || a.zips ? `找到 ChatGPT 导出包 ${c.zips} 个、Claude.ai ${a.zips} 个，导入 ${c.conversations + a.conversations} 个对话`
+    : "下载文件夹里还没有官方导出包");
+  loadOverview();
+});
+
 // ------------------------------------------------------------ start
 (async () => {
   if (!TOKEN) { toast("缺少访问令牌：请用 `ctxport app` 打开这个页面", true); return; }

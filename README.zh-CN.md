@@ -80,6 +80,8 @@ ctxport serve-ingest --pair                # 一次：打印配对码，填入�
 ctxport sync --extract                     # 本地来源 + 扩展收到的数据，全部增量入库
 ```
 
+ChatGPT 对话很多时，可在扩展弹窗或 `ctxport app` 里一键发起官方导出（下载链接发到邮箱），下载的 zip 放在“下载”文件夹会被 `ctxport sync` 自动导入。
+
 ctxport 不会解密浏览器 Cookie 或读取保存的密码；网页数据只能由你浏览器里的扩展在你登录的页面里读取。
 
 ## 快速上手

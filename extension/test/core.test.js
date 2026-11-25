@@ -258,8 +258,35 @@ async function testParallel() {
     return "ok";
   }, "x", gate);
   assert.strictEqual(v, "ok");
-  assert.ok(slept.includes(90000), JSON.stringify(slept));
+  assert.ok(slept.reduce((x, y) => x + y, 0) >= 90000, "waited the full Retry-After: " + JSON.stringify(slept));
   assert.strictEqual(gate.cur, 1);
+}
+
+async function testPause() {
+  // pausing mid-download stops the sync; what was pushed before is kept
+  const all = Array.from({ length: 60 }, (_, i) => ({ id: "p" + i, update_time: "u" + i }));
+  let paused = false, fetched = 0;
+  const routes = [
+    [/^\/api\/auth\/session$/, { accessToken: "T" }],
+    [/conversations\?offset=(\d+)&limit=100&order=updated$/, (m) => ({ items: all.slice(+m[1], +m[1] + 100) })],
+    [/is_archived=true/, { items: [] }],
+    [/gizmos\/snorlax/, { items: [] }],
+    [/^\/backend-api\/conversation\/(p\d+)$/, (m) => { fetched++; if (fetched === 25) paused = true; return { title: m[1], mapping: {} }; }],
+  ];
+  const io = makeIO(routes, {});
+  io.concurrency = 2;
+  io.shouldStop = () => paused;
+  io.sleep = async () => { await new Promise((r) => setImmediate(r)); };
+  await assert.rejects(Core.syncChatGPT(io), (e) => e.paused === true);
+  assert.ok(fetched < 30, "stops promptly after the switch: " + fetched);
+  assert.ok(io.pushed.flatMap((p) => p.conversations).length >= 20, "batches pushed before the pause are kept");
+
+  // a long rate-limit wait is interrupted by the pause instead of running to the end
+  let t = 0, stop = false;
+  const io2 = { log() {}, now: () => t, shouldStop: () => stop, sleep: async (ms) => { t += ms; if (t > 20000) stop = true; } };
+  await assert.rejects(Core.withRetry(io2, async () => { throw Object.assign(new Error("429"), { status: 429, retryAfter: 600 }); },
+    "x", Core.makeGate(2)), (e) => e.paused === true);
+  assert.ok(t < 60000, "did not wait out the full 10 minutes: " + t);
 }
 
 async function testPoolWithoutTimers() {
@@ -319,11 +346,17 @@ async function testWriteMemory() {
   assert.ok(fr.ok && opened && saved);
   assert.strictEqual(area.value, "- likes tea");
   assert.deepStrictEqual(JSON.parse(JSON.stringify(area.events)), ["input", "change"]);
+  const exp = [];
+  const ioE = { getJSON: async () => ({ accessToken: "T" }), postJSON: async (u, b, h) => { exp.push([u, h.Authorization]); return {}; } };
+  const er = await Core.requestChatGPTExport(ioE);
+  assert.ok(er.ok);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(exp)), [["/backend-api/accounts/data_export", "Bearer T"]]);
   const empty = { querySelectorAll: () => [] };
   await assert.rejects(Core.fillMemoryForm(empty, win, "x", { timeout: 50 }), /找不到输入框/);
 }
 
 (async () => {
+  await testPause();
   await testPoolWithoutTimers();
   await testWriteMemory();
   await testParallel();

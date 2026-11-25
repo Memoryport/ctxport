@@ -256,6 +256,18 @@ def distill_estimate() -> dict:
     return e
 
 
+def import_downloads() -> dict:
+    """Import official ChatGPT / Claude.ai export zips found in the Downloads folder."""
+    from .adapters.base import downloads_dir
+    from .pipeline import import_path
+    out = {}
+    with Store() as s:
+        for plat in ("chatgpt", "claude-ai"):
+            r = import_path(s, plat, downloads_dir())
+            out[plat] = {"zips": r.units, "imported": r.imported, "conversations": r.conversations}
+    return out
+
+
 def distill_options() -> dict:
     from .distill import agent_commands
     return {"agents": sorted(agent_commands())}
@@ -485,6 +497,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 if payload.get("confirm") is not True:
                     return self._json(400, {"error": "confirmation required"})
                 return self._json(200, distill_agent(str(payload.get("agent"))))
+            if path == "/api/import-downloads":
+                return self._json(200, import_downloads())
             if path == "/api/distill/folder":
                 return self._json(200, distill_folder())
             if path == "/api/distill/build":
