@@ -199,3 +199,36 @@ def test_receiver_memory_text_requires_pairing(tmp_path):
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+def test_app_distill_without_api_key(app, monkeypatch):
+    import time as _t
+    from ctxport import webapp
+    from ctxport.models import Conversation, Message
+    monkeypatch.setattr(webapp, "reveal", lambda path: None)
+    s = Store()
+    c = Conversation(platform="test", native_id="d1", title="t")
+    c.messages = [Message(role="user", text="I am a chemistry teacher"), Message(role="assistant", text="ok")]
+    s.upsert_conversation(c)
+    s.commit()
+    s.close()
+    assert "agents" in call(app, "/api/distill/options")[1]
+    code, r = call(app, "/api/distill/folder", {})
+    assert code == 200 and r["conversations"] == 1
+    code, w = call(app, "/api/distill/web")
+    assert code == 200 and w["batches"][0]["name"] == "0001.md"
+    code, p = call(app, "/api/distill/web/prompt?name=0001.md")
+    assert "test:d1" in p["text"]
+    assert call(app, "/api/distill/web/prompt?name=../../etc/passwd")[0] == 400
+    reply = json.dumps({"cards": {"test:d1": {"summary": "s", "facts": [
+        {"text": "The user is a chemistry teacher", "category": "work"}]}}})
+    assert call(app, "/api/distill/web/answer", {"name": "0001.md", "reply": reply})[1]["cards"] == 1
+    assert call(app, "/api/distill/agent", {"agent": "claude-code"})[0] == 400  # needs confirmation
+    assert call(app, "/api/distill/build", {})[0] == 200
+    for _ in range(100):
+        st = call(app, "/api/distill/status")[1]
+        if not st["running"]:
+            break
+        _t.sleep(0.05)
+    assert st["profile_exists"] and st["last_run"]["coverage"]["full"] == 1.0
+    assert "chemistry teacher" in call(app, "/api/text?target=claude-ai")[1]["text"]

@@ -126,18 +126,19 @@ Opens a page served only on this computer (`127.0.0.1`, a fresh random access to
 The text written into web accounts is always fetched by the extension from your local ctxport (accepted, masked
 memories only); a web page can never choose what gets written.
 
-### Full profile: `ctxport distill`
+### Full profile: `ctxport distill` (no API key)
 
-Distill all conversations into one complete profile with a model you choose (ctxport ships none); the code
-guarantees every fact is included:
+Use an AI you already have; ctxport prepares the material, merges the results and checks that every fact is in
+the final profile:
 
 ```bash
-ctxport llm set --preset openai --model <model id> --api-key <key> --allow-remote   # or anthropic / gemini / deepseek / ollama …
-ctxport distill --dry-run        # how much would be sent
-ctxport distill                  # asks before sending; only new or changed conversations
+ctxport distill --agent claude-code      # your own Claude Code, batch by batch (or --agent codex); resumable
+ctxport distill --agent folder           # task folder for any agent: "follow TASK.md"
+ctxport distill --manual ~/ctxport-web   # prompts to paste into ChatGPT / Claude on the web
 ctxport export claude-code --distilled --apply
-ctxport distill --manual ~/ctxport-prompts   # no API: prompts to paste into any chat AI
 ```
+
+(Advanced: `--api` uses an OpenAI-compatible endpoint configured with `ctxport llm set`.)
 
 ## Summarize your background in one command
 

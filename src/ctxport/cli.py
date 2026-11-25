@@ -595,6 +595,38 @@ def cmd_distill(args) -> int:
                 if not n:
                     return 0
             res = D.run(s, None, args.platform, args.limit, polish=False, progress=info)
+        elif args.agent:
+            folder = D.work_dir("agent")
+            imp = D.agent_import(s, folder) if (folder / "cards").is_dir() else {"imported": 0}
+            prep = D.agent_prepare(s, folder, args.platform, args.limit)
+            info(f"task folder: {prep['folder']} · {prep['conversations']} conversations need a card "
+                 f"({len(prep['batches'])} batches)" + (f" · imported {imp['imported']} existing cards" if imp["imported"] else ""))
+            if args.agent == "folder":
+                info("Open this folder in any agent (Cursor, Antigravity, Codex app, Claude Code …) and say:\n"
+                     "  “Read TASK.md and process every file in conversations/ that has no card yet.”\n"
+                     "Then run `ctxport distill --agent folder` again to import the cards and build the profile.")
+                if prep["conversations"] and not imp["imported"]:
+                    return 0
+            elif prep["conversations"]:
+                if not args.yes and sys.stdin.isatty():
+                    if input(f"Run {args.agent} on {prep['conversations']} conversations with your own account "
+                             "(uses your plan's usage)? [y/N] ").strip().lower() not in ("y", "yes"):
+                        return 1
+                try:
+                    r = D.run_agent(s, folder, args.agent, progress=info)
+                except RuntimeError as e:
+                    info(str(e))
+                    return 2
+                info(f"{args.agent}: {r['batches_run']} batches run, {r['batches_failed']} failed, {r['imported']} cards")
+            res = D.run(s, None, args.platform, args.limit, polish=False, progress=info)
+        elif not args.api:
+            info("Choose how to distil (no API key needed):\n"
+                 "  ctxport distill --agent claude-code   run your Claude Code (or --agent codex) batch by batch\n"
+                 "  ctxport distill --agent folder        prepare a task folder for any agent\n"
+                 "  ctxport distill --manual DIR          prompts to paste into ChatGPT / Claude web\n"
+                 "  ctxport app                           the same, with buttons\n"
+                 "(advanced: --api uses an OpenAI-compatible endpoint set with `ctxport llm set`)")
+            return 0
         else:
             from .llm import client_from_config, RemoteNotAllowed
             try:
@@ -841,6 +873,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--yes", action="store_true", help="don't ask for confirmation")
     p.add_argument("--no-polish", action="store_true", help="model only for cards; merge and write without it")
     p.add_argument("--manual", metavar="DIR", help="no API: write prompts to paste into any chat AI, import replies")
+    p.add_argument("--agent", choices=["claude-code", "codex", "folder"],
+                   help="let your own agent write the cards (no API key)")
+    p.add_argument("--api", action="store_true", help="advanced: use the endpoint configured with `ctxport llm set`")
     p.set_defaults(fn=cmd_distill)
 
     p = sub.add_parser("app", help="open the local app: review memories and import them into other AIs")

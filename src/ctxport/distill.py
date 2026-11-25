@@ -540,3 +540,176 @@ def estimate(store: Store, platform: Optional[str] = None, limit: Optional[int] 
     cache.close()
     # mixed Chinese/English text is roughly 1 token per 2-3 characters
     return {"conversations": convs, "calls": calls, "chars": chars, "tokens_approx": int(chars / 2.5)}
+
+
+# ---------------------------------------------------------------- agent mode (Claude Code, Codex, any agent; no API key)
+
+AGENT_TASK = """# Task: write episode cards for a memory profile
+
+You are helping the owner of these conversations build a long-term profile of themselves for AI assistants.
+Everything here is their own chat history (secrets already masked). Work only inside this folder.
+
+For EACH file listed in the batch you are given (files in `conversations/`), read it and write
+`cards/<same file name>.json` containing exactly:
+
+{"conversation_id": "<the id on the first line of the file>",
+ "summary": "1-3 sentences: what the user wanted and what came out of it",
+ "facts": [{"text": "...", "category": "identity|work|study|preference|project|tooling|goal|constraint|general",
+            "evidence": [message numbers], "durable": true}]}
+
+Rules for facts:
+- Facts about the USER only: who they are, background, work/study, projects, goals, preferences, how they like to
+  work with assistants, tools and environment, constraints. Use what the user said or explicitly confirmed;
+  assistant text is context only.
+- One atomic fact per item, specific (names, versions, dates when given), third person ("The user …" / "用户…"),
+  in the language the user mainly writes in. "durable": false for one-off task details.
+- Never include passwords, keys, ID/account numbers, exact addresses, or health, sexual or criminal information.
+- If a conversation says nothing about the user, still write the card with "facts": [].
+- Do not edit or delete any other file. Do not summarise across conversations: ctxport merges the cards itself
+  and checks that every fact ends up in the final profile.
+"""
+
+
+def _safe_file(cid: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", cid)[:150]
+
+
+def agent_prepare(store: Store, folder: Path, platform: Optional[str] = None, limit: Optional[int] = None,
+                  batch: int = 20) -> dict:
+    """Write the task folder: conversations/*.md (only those without an up-to-date card), batches/NNNN.txt,
+    TASK.md, and AGENTS.md / CLAUDE.md pointing at it so any coding agent picks the task up."""
+    folder = Path(folder).expanduser()
+    for sub in ("conversations", "cards", "batches"):
+        (folder / sub).mkdir(parents=True, exist_ok=True)
+    for old in (folder / "batches").glob("*.txt"):
+        old.unlink()
+    cache = open_cache()
+    todo = []
+    for r in store.conversation_rows(platform=platform, limit=limit, order="updated_at DESC"):
+        conv = store.get_conversation(r["id"])
+        if conv is None or conv.meta.get("is_subagent"):
+            continue
+        chunks = conversation_input(conv)
+        if not any("USER:" in c for c in chunks):
+            continue
+        hit = cache.execute("SELECT content_hash FROM cards WHERE conversation_id=?", (conv.id,)).fetchone()
+        if hit and hit["content_hash"] == content_hash(conv):
+            continue
+        name = _safe_file(conv.id) + ".md"
+        private_write_text(folder / "conversations" / name,
+                           f"conversation id: {conv.id}\n{card_prompt(conv, chr(10).join(chunks), 1, 1)}\n")
+        stale = folder / "cards" / (_safe_file(conv.id) + ".json")
+        if stale.exists():
+            stale.unlink()
+        todo.append(name)
+    cache.close()
+    batches = []
+    for i in range(0, len(todo), batch):
+        p = folder / "batches" / f"{i // batch + 1:04d}.txt"
+        p.write_text("\n".join(todo[i:i + batch]) + "\n", encoding="utf-8")
+        batches.append(str(p))
+    (folder / "TASK.md").write_text(AGENT_TASK, encoding="utf-8")
+    pointer = ("Read TASK.md. Process the conversation files listed in the batch file you are given "
+               "(or, if none is given, every file in conversations/ that has no card yet in cards/).\n")
+    (folder / "AGENTS.md").write_text(pointer, encoding="utf-8")
+    (folder / "CLAUDE.md").write_text(pointer, encoding="utf-8")
+    return {"folder": str(folder), "conversations": len(todo), "batches": batches}
+
+
+def agent_import(store: Store, folder: Path) -> dict:
+    """Read cards/*.json written by the agent into the cache. Returns {"imported", "invalid"}."""
+    folder = Path(folder).expanduser()
+    cache = open_cache()
+    n = bad = 0
+    for p in sorted((folder / "cards").glob("*.json")):
+        try:
+            raw = parse_json_object(p.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+        cid = raw.get("conversation_id")
+        conv = store.get_conversation(cid) if isinstance(cid, str) else None
+        if conv is None:
+            bad += 1
+            continue
+        card = _clean_card(raw)
+        card.update({"title": conv.title, "platform": conv.platform, "date": conv.updated_at or conv.created_at})
+        cache.execute("INSERT OR REPLACE INTO cards VALUES(?,?,?,?,?)",
+                      (cid, content_hash(conv), "agent", json.dumps(card, ensure_ascii=False), time.time()))
+        n += 1
+    cache.commit()
+    cache.close()
+    return {"imported": n, "invalid": bad}
+
+
+def agent_commands() -> dict:
+    """Agent CLIs found on this computer that can run a batch unattended."""
+    import shutil
+    out = {}
+    if shutil.which("claude"):
+        out["claude-code"] = shutil.which("claude")
+    if shutil.which("codex"):
+        out["codex"] = shutil.which("codex")
+    return out
+
+
+def run_agent(store: Store, folder: Path, agent: str, progress: Optional[Callable[[str], None]] = None,
+              timeout: int = 1800) -> dict:
+    """Run Claude Code (`claude -p`) or Codex (`codex exec`) once per batch, inside the task folder, using the
+    user's own logged-in agent. Cards are imported after every batch, so an interrupted run resumes."""
+    import subprocess
+    folder = Path(folder).expanduser()
+    exe = agent_commands().get(agent)
+    if not exe:
+        raise RuntimeError(f"{agent} 命令行没有安装；可以改用“打开任务文件夹”交给任意 Agent")
+    batches = sorted((folder / "batches").glob("*.txt"))
+    done = failed = 0
+    for i, b in enumerate(batches, 1):
+        names = [n for n in b.read_text(encoding="utf-8").split() if n]
+        if all((folder / "cards" / (Path(n).stem + ".json")).exists() for n in names):
+            continue
+        task = (f"Follow TASK.md exactly. Process only these files from conversations/ (listed in {b.relative_to(folder)}): "
+                f"{', '.join(names)}. Write one card per file into cards/. Then stop.")
+        if agent == "claude-code":
+            cmd = [exe, "-p", task, "--permission-mode", "acceptEdits", "--allowedTools", "Read", "Write", "Glob"]
+        else:
+            cmd = [exe, "exec", "--full-auto", "--skip-git-repo-check", task]
+        if progress:
+            progress(f"{agent}: batch {i}/{len(batches)} ({len(names)} conversations)")
+        try:
+            r = subprocess.run(cmd, cwd=str(folder), capture_output=True, text=True, timeout=timeout)
+            if r.returncode != 0:
+                failed += 1
+                if progress:
+                    progress(f"{agent}: batch {i} exited {r.returncode}: {(r.stderr or r.stdout)[-300:]}")
+        except subprocess.TimeoutExpired:
+            failed += 1
+            if progress:
+                progress(f"{agent}: batch {i} timed out")
+        done += 1
+        agent_import(store, folder)
+    imp = agent_import(store, folder)
+    return {"batches_run": done, "batches_failed": failed, **imp}
+
+
+# ---------------------------------------------------------------- web chat mode helpers (used by the app)
+
+def web_batches(store: Store, folder: Path, per_file_chars: int = 30000, limit: Optional[int] = None) -> list:
+    """(Re)write manual prompt files and return [{"name", "chars"}] for the copy/paste flow."""
+    for old in (Path(folder).expanduser() / "prompts").glob("*.md"):
+        old.unlink()
+    r = manual_export(store, folder, limit=limit, per_file_chars=per_file_chars)
+    return [{"name": Path(p).name, "chars": Path(p).stat().st_size} for p in r["prompts"]]
+
+
+def web_answer(store: Store, folder: Path, name: str, reply: str) -> int:
+    """Save the chat AI's reply for prompt `name` and import its cards. Returns the number of cards imported."""
+    folder = Path(folder).expanduser()
+    if not re.fullmatch(r"\d{4}\.md", name):
+        raise ValueError("bad batch name")
+    (folder / "responses").mkdir(parents=True, exist_ok=True)
+    (folder / "responses" / name.replace(".md", ".json")).write_text(reply, encoding="utf-8")
+    return manual_import(store, folder)
+
+
+def work_dir(kind: str) -> Path:
+    return default_home() / "distill-work" / kind

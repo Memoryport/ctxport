@@ -24,6 +24,10 @@ All notable changes to ctxport are listed here. The format follows
   tokens, timings and coverage to `~/.ctxport/distilled/run-*.json`. `export --distilled` and `ctxport app` use the
   profile.
 - Extension: rate-limit waits are timed by the background worker, so a background tab no longer stretches them.
+- `ctxport distill` without an API key: `--agent claude-code|codex` runs the user's own agent CLI batch by batch
+  (`claude -p` / `codex exec`, resumable), `--agent folder` prepares a task folder (TASK.md, AGENTS.md, CLAUDE.md)
+  for any agent, and the app has a copy/paste flow for ChatGPT / Claude on the web (optionally only the most recent
+  50 / 200 conversations). The API path is now opt-in with `--api`.
 
 ### Changed
 - Re-syncing a conversation rewrites only the messages that changed. The browser extension sends a whole

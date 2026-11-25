@@ -157,3 +157,65 @@ def test_llm_config_never_picks_a_model(tmp_path, monkeypatch):
     import stat
     if os.name == "posix":
         assert stat.S_IMODE(os.stat(llm.config_path()).st_mode) == 0o600
+
+
+def _fake_agent(tmp_path, monkeypatch, drop_one=False):
+    """A stand-in `claude` CLI: reads the batch files named in the -p task and writes cards/<name>.json."""
+    import os
+    import stat
+    import sys
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    script = bin_dir / "claude"
+    script.write_text(f"""#!{sys.executable}
+import json, re, sys, pathlib
+task = sys.argv[sys.argv.index("-p") + 1]
+names = re.findall(r"([A-Za-z0-9._-]+\\.md)", task.split(":", 1)[1])
+for i, n in enumerate(names):
+    if {drop_one!r} and i == 0:
+        continue
+    text = pathlib.Path("conversations", n).read_text(encoding="utf-8")
+    cid = text.splitlines()[0].split(": ", 1)[1]
+    key = re.search(r"secret-(c\\d)", text).group(1)
+    pathlib.Path("cards", n[:-3] + ".json").write_text(json.dumps({{"conversation_id": cid, "summary": "s",
+        "facts": [{{"text": "Agent fact for " + key, "category": "general", "evidence": [1]}}]}}))
+""", encoding="utf-8")
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("PATH", str(bin_dir) + os.pathsep + os.environ.get("PATH", ""))
+
+
+@pytest.mark.skipif(__import__("os").name == "nt", reason="shell-script stand-in for the claude CLI")
+def test_agent_mode_runs_claude_code_in_batches(store, tmp_path, monkeypatch):
+    _fake_agent(tmp_path, monkeypatch, drop_one=True)
+    folder = tmp_path / "work"
+    prep = D.agent_prepare(store, folder, batch=2)
+    assert prep["conversations"] == 3 and len(prep["batches"]) == 2
+    assert (folder / "TASK.md").exists() and "TASK.md" in (folder / "CLAUDE.md").read_text(encoding="utf-8")
+    assert "sk-abcdefghijklmnop" not in "".join(p.read_text(encoding="utf-8") for p in (folder / "conversations").iterdir())
+    assert "claude-code" in D.agent_commands()
+    r = D.run_agent(store, folder, "claude-code")
+    assert r["imported"] == 1  # the fake agent skips the first file of each batch: 3 files in batches of 2 → 1 card
+    # preparing again only lists what is still missing, and the profile covers every card fact
+    assert D.agent_prepare(store, folder, batch=2)["conversations"] == 2
+    log = D.run(store, None, polish=False)["log"]
+    assert log["cards_cached"] == 1 and log["coverage"]["full"] == 1.0
+
+
+def test_agent_import_rejects_unknown_ids(store, tmp_path):
+    folder = tmp_path / "w"
+    D.agent_prepare(store, folder)
+    (folder / "cards" / "x.json").write_text('{"conversation_id": "test:nope", "facts": []}', encoding="utf-8")
+    (folder / "cards" / "y.json").write_text(json.dumps({"conversation_id": "test:c2", "summary": "s",
+        "facts": [{"text": "The user likes chess", "category": "preference"}]}), encoding="utf-8")
+    assert D.agent_import(store, folder) == {"imported": 1, "invalid": 1}
+
+
+def test_web_answer_flow(store, tmp_path):
+    folder = tmp_path / "web"
+    batches = D.web_batches(store, folder)
+    assert len(batches) == 1 and batches[0]["name"] == "0001.md"
+    reply = "好的：\n```json\n" + json.dumps({"cards": {"test:c3": {"summary": "s", "facts": [
+        {"text": "The user wants answers in Chinese", "category": "preference"}]}}}) + "\n```"
+    assert D.web_answer(store, folder, "0001.md", reply) == 1
+    with pytest.raises(ValueError):
+        D.web_answer(store, folder, "../x.md", "{}")

@@ -256,6 +256,99 @@ def distill_estimate() -> dict:
     return e
 
 
+def distill_options() -> dict:
+    from .distill import agent_commands
+    return {"agents": sorted(agent_commands())}
+
+
+def _distill_thread(job) -> None:
+    def note(line: str) -> None:
+        with _DISTILL_LOCK:
+            _DISTILL["lines"].append(line)
+
+    def work() -> None:
+        try:
+            res = job(note)
+            with _DISTILL_LOCK:
+                _DISTILL["result"] = res
+        except Exception as e:
+            with _DISTILL_LOCK:
+                _DISTILL["error"] = f"{type(e).__name__}: {e}"
+        finally:
+            with _DISTILL_LOCK:
+                _DISTILL["running"] = False
+
+    with _DISTILL_LOCK:
+        if _DISTILL["running"]:
+            raise ValueError("已经在提炼中")
+        _DISTILL.update(running=True, lines=[], result=None, error=None)
+    threading.Thread(target=work, daemon=True).start()
+
+
+def build_profile_now(note=None) -> dict:
+    """Import whatever cards the agent folder / web replies hold, then merge and write (no model needed)."""
+    from . import distill as D
+    with Store() as s:
+        if (D.work_dir("agent") / "cards").is_dir():
+            D.agent_import(s, D.work_dir("agent"))
+        if (D.work_dir("web") / "responses").is_dir():
+            D.manual_import(s, D.work_dir("web"))
+        r = D.run(s, None, polish=False, progress=note)
+    return {"chars": r["chars"], "log": r["log"]}
+
+
+def distill_agent(agent: str) -> dict:
+    from . import distill as D
+    if agent not in D.agent_commands():
+        raise ValueError(f"没有找到 {agent} 命令行")
+
+    def job(note):
+        with Store() as s:
+            prep = D.agent_prepare(s, D.work_dir("agent"))
+            note(f"{prep['conversations']} 个对话需要情节卡，共 {len(prep['batches'])} 批")
+            if prep["conversations"]:
+                r = D.run_agent(s, D.work_dir("agent"), agent, progress=note)
+                note(f"{agent}：完成 {r['batches_run']} 批，失败 {r['batches_failed']} 批，导入 {r['imported']} 张卡")
+        return build_profile_now(note)
+
+    _distill_thread(job)
+    return {"ok": True}
+
+
+def distill_folder() -> dict:
+    from . import distill as D
+    with Store() as s:
+        prep = D.agent_prepare(s, D.work_dir("agent"))
+    reveal(str(Path(prep["folder"]) / "TASK.md"))
+    return prep
+
+
+def distill_build() -> dict:
+    _distill_thread(build_profile_now)
+    return {"ok": True}
+
+
+def web_list(limit: Optional[int] = None) -> dict:
+    from . import distill as D
+    with Store() as s:
+        return {"batches": D.web_batches(s, D.work_dir("web"), limit=limit)}
+
+
+def web_prompt(name: str) -> str:
+    import re as _re
+    from . import distill as D
+    if not _re.fullmatch(r"\d{4}\.md", name or ""):
+        raise ValueError("bad batch name")
+    return (D.work_dir("web") / "prompts" / name).read_text(encoding="utf-8")
+
+
+def web_answer(name: str, reply: str) -> dict:
+    from . import distill as D
+    with Store() as s:
+        n = D.web_answer(s, D.work_dir("web"), name, reply)
+    return {"ok": True, "cards": n}
+
+
 def distill_start() -> dict:
     from . import distill as D
     from .llm import client_from_config
@@ -350,11 +443,20 @@ class AppHandler(BaseHTTPRequestHandler):
                 return self._json(200, llm_settings())
             if u.path == "/api/distill/status":
                 return self._json(200, distill_status())
+            if u.path == "/api/distill/options":
+                return self._json(200, distill_options())
+            if u.path == "/api/distill/web":
+                lim = q.get("limit", "")
+                return self._json(200, web_list(int(lim) if lim.isdigit() and int(lim) > 0 else None))
+            if u.path == "/api/distill/web/prompt":
+                return self._json(200, {"text": web_prompt(q.get("name", ""))})
             if u.path == "/api/text":
                 with Store() as s:
                     return self._json(200, {"text": memory_text(s, q.get("target", ""))})
         except KeyError as e:
             return self._json(400, {"error": f"unknown target {e}"})
+        except (ValueError, RuntimeError, FileNotFoundError) as e:
+            return self._json(400, {"error": str(e)})
         except Exception as e:
             return self._json(500, {"error": f"{type(e).__name__}: {e}"})
         return self._json(404, {"error": "not found"})
@@ -379,6 +481,16 @@ class AppHandler(BaseHTTPRequestHandler):
         try:
             if path == "/api/llm":
                 return self._json(200, save_llm(payload))
+            if path == "/api/distill/agent":
+                if payload.get("confirm") is not True:
+                    return self._json(400, {"error": "confirmation required"})
+                return self._json(200, distill_agent(str(payload.get("agent"))))
+            if path == "/api/distill/folder":
+                return self._json(200, distill_folder())
+            if path == "/api/distill/build":
+                return self._json(200, distill_build())
+            if path == "/api/distill/web/answer":
+                return self._json(200, web_answer(str(payload.get("name")), str(payload.get("reply") or "")))
             if path == "/api/distill/estimate":
                 return self._json(200, distill_estimate())
             if path == "/api/distill/start":

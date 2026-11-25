@@ -118,19 +118,18 @@ ctxport app
 
 写进网页账号的文字永远由扩展从本机 ctxport 读取（只含已确认、已遮蔽密钥的记忆），网页本身无法指定要写入的内容。
 
-### 完整记忆档案：`ctxport distill`
+### 完整记忆档案：`ctxport distill`（不需要 API Key）
 
-用你自己选的模型（ctxport 不内置模型）把全部对话分层提炼成一份完整档案，并由程序保证每条事实都被写进去：
+用你已经在用的 AI 来提炼，ctxport 只负责准备材料、合并去重，并由程序保证每条事实都写进最终档案：
 
 ```bash
-ctxport llm set --preset deepseek --model <模型名> --api-key <key> --allow-remote   # 或 openai / anthropic / gemini / ollama …
-ctxport distill --dry-run        # 先看要发送多少内容、约多少 token
-ctxport distill                  # 确认后运行；只处理新增和改过的对话
+ctxport distill --agent claude-code      # 用你自己的 Claude Code 逐批处理（--agent codex 同理），中断后再运行会接着做
+ctxport distill --agent folder           # 生成任务文件夹，在任意 Agent（Cursor、Antigravity、Codex App…）里打开，说“按 TASK.md 做”
+ctxport distill --manual ~/ctxport-web   # 生成提示词，逐批贴进 ChatGPT / Claude 网页版，再把回复存回来
 ctxport export claude-code --distilled --apply
-ctxport distill --manual ~/ctxport-prompts   # 没有 API：生成提示词，贴进任何聊天 AI，再导入回复
 ```
 
-完整版档案覆盖率按构造为 100%；ChatGPT 这类有字数上限的目标用按重要度挑选的精简版，并报告覆盖比例。每次运行的统计写在 `~/.ctxport/distilled/run-*.json`。
+`ctxport app` 里有同样的按钮，网页版还可以选“只处理最近 50 / 200 个对话”。完整版档案覆盖率按构造为 100%；ChatGPT 这类有字数上限的目标用按重要度挑选的精简版，并报告覆盖比例。每次运行的统计写在 `~/.ctxport/distilled/run-*.json`。（高级：`--api` 可改用 `ctxport llm set` 配置的 OpenAI 兼容接口。）
 
 ## 一条命令总结你的个人背景
 
