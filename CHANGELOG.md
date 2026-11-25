@@ -16,6 +16,14 @@ All notable changes to ctxport are listed here. The format follows
   text), the Claude.ai memory import page and Gemini saved info (form filling, experimental). The text comes from
   the paired receiver's new `/memory-text` endpoint, never from a web page.
 - `cursor` export target.
+- `ctxport distill`: coverage-guaranteed hierarchical memory distillation with a model the user chooses
+  (`ctxport llm set --preset … --model …`; presets for common OpenAI-compatible providers, no built-in model).
+  L1 episode cards with evidence (cached per conversation), L2 canonical facts that cover every L1 fact, L3 themed
+  profile that lists every canonical fact (both invariants checked in code, dropped items restored), L4 budgeted
+  renderings with coverage@budget. `--manual DIR` writes prompts to paste into any chat AI. Each run logs counts,
+  tokens, timings and coverage to `~/.ctxport/distilled/run-*.json`. `export --distilled` and `ctxport app` use the
+  profile.
+- Extension: rate-limit waits are timed by the background worker, so a background tab no longer stretches them.
 
 ### Changed
 - Re-syncing a conversation rewrites only the messages that changed. The browser extension sends a whole

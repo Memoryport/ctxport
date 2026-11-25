@@ -18,6 +18,21 @@ INTRO = (
 )
 
 
+def distilled_profile(opts: ExportOptions, short: bool = False) -> str:
+    """The `ctxport distill` profile when the export asked for it (opts.extra["distilled"]) and it exists."""
+    if not opts.extra.get("distilled"):
+        return ""
+    from ..distill import out_dir
+    p = out_dir() / ("profile.short.md" if short else "profile.md")
+    if not p.exists():
+        return ""
+    text = p.read_text(encoding="utf-8")
+    if text.startswith("# "):
+        text = text.split("\n", 1)[1] if "\n" in text else ""
+    from ..redact import maybe
+    return maybe(text.strip(), opts.redact) + "\n"
+
+
 class InstructionFileExporter(Exporter):
     """Writes memories into a managed block of a Markdown instruction file."""
 
@@ -32,6 +47,14 @@ class InstructionFileExporter(Exporter):
         return Path(self.global_path).expanduser()
 
     def body(self, memories: list, opts: ExportOptions) -> str:
+        distilled = distilled_profile(opts)
+        if distilled:
+            text = f"## About the user (migrated by ctxport)\n\n{INTRO}\n\n" + distilled
+            if self.max_chars and len(text) > self.max_chars:
+                short = distilled_profile(opts, short=True) or ""
+                text = (f"## About the user (migrated by ctxport)\n\n{INTRO}\n\n{short}\n"
+                        "<!-- ctxport: the full profile did not fit; this is the importance-ranked selection -->\n")
+            return text
         if opts.project:
             name = Path(opts.project).expanduser().resolve().name
             mems = [m for m in memories if m.scope == "global" or m.scope.endswith(name) or m.scope.endswith(str(opts.project))]

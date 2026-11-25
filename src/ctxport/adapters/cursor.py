@@ -31,7 +31,9 @@ class CursorExporter(Exporter):
                     "Per project: re-run with --project DIR --apply to write DIR/.cursor/rules/ctxport.mdc.")
 
     def render(self, store, memories: list, opts: ExportOptions) -> list:
-        body = f"# About the user\n\n{INTRO}\n\n" + render_memories_md(memories, redact=opts.redact, heading_level=2)
+        from ._instruction import distilled_profile
+        body = f"# About the user\n\n{INTRO}\n\n" + (distilled_profile(opts)
+                                                       or render_memories_md(memories, redact=opts.redact, heading_level=2))
         if opts.project:
             target = Path(opts.project).expanduser() / ".cursor" / "rules" / "ctxport.mdc"
             return [OutputFile("cursor/ctxport.mdc", RULE_HEADER + body, apply_path=str(target), managed=False)]

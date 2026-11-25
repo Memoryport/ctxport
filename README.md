@@ -126,6 +126,19 @@ Opens a page served only on this computer (`127.0.0.1`, a fresh random access to
 The text written into web accounts is always fetched by the extension from your local ctxport (accepted, masked
 memories only); a web page can never choose what gets written.
 
+### Full profile: `ctxport distill`
+
+Distill all conversations into one complete profile with a model you choose (ctxport ships none); the code
+guarantees every fact is included:
+
+```bash
+ctxport llm set --preset openai --model <model id> --api-key <key> --allow-remote   # or anthropic / gemini / deepseek / ollama …
+ctxport distill --dry-run        # how much would be sent
+ctxport distill                  # asks before sending; only new or changed conversations
+ctxport export claude-code --distilled --apply
+ctxport distill --manual ~/ctxport-prompts   # no API: prompts to paste into any chat AI
+```
+
 ## Summarize your background in one command
 
 Starting fresh with a new assistant? `ctxport profile` turns your memories and recent chat topics into one short

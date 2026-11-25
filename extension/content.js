@@ -29,7 +29,9 @@
     return {
       full,
       concurrency,
-      sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+      // Timers in a background tab are throttled to about one wake-up per minute, which turned a 30 s
+      // rate-limit pause into several minutes. The extension's background worker keeps exact time.
+      sleep: (ms) => bg({ type: "sleep", ms }).catch(() => new Promise((r) => setTimeout(r, ms))),
       log: (text) => bg({ type: "progress", platform, text }).catch(() => {}),
       known: async () => (await bg({ type: "known", platform })).known,
       push: (payload) => bg({ type: "ingest", payload }),

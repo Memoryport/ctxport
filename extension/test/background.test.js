@@ -71,7 +71,18 @@ async function testSyncAllRunsSitesTogether() {
   assert.ok(/layout changed/.test(out[2].error), "one site failing does not stop the others");
 }
 
+async function testKeepAliveSleep() {
+  const { ctx, chrome } = load();
+  let pings = 0;
+  chrome.runtime.getPlatformInfo = async () => { pings++; return {}; };
+  const t0 = Date.now();
+  const r = await ctx.keepAliveSleep(120);
+  assert.ok(r.ok && Date.now() - t0 >= 110, "waits about the requested time");
+  assert.ok(pings >= 1, "touches an extension API so the worker stays alive");
+}
+
 (async () => {
+  await testKeepAliveSleep();
   await testSyncAllRunsSitesTogether();
   await testConcurrentLogAndStatus();
   await testClaimAutoSync();

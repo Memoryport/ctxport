@@ -272,7 +272,8 @@ def _export_opts(args) -> ExportOptions:
         out_dir=Path(args.out), apply=args.apply, project=Path(args.project) if args.project else None,
         platform=args.platform, limit=args.limit, since=parse_since(args.since),
         include_candidates=args.include_candidates, include_tools=args.include_tools,
-        include_reasoning=args.include_reasoning, redact=not args.no_redact, include_raw=args.include_raw)
+        include_reasoning=args.include_reasoning, redact=not args.no_redact, include_raw=args.include_raw,
+        extra={"distilled": getattr(args, "distilled", False)})
 
 
 def export_and_apply(store: Store, target: str, opts: ExportOptions) -> dict:
@@ -548,6 +549,82 @@ def cmd_serve_mcp(args) -> int:
     return 0
 
 
+def cmd_llm(args) -> int:
+    from . import llm as L
+    if args.action == "presets":
+        for k, v in L.PRESETS.items():
+            print(f"{k:11} {v['label']:48} {v['base_url']}")
+        return 0
+    cfg = L.load_config()
+    if args.action == "set":
+        if args.preset and args.preset not in L.PRESETS:
+            info(f"unknown preset {args.preset!r}; see `ctxport llm presets`")
+            return 2
+        for k in ("preset", "base_url", "model", "api_key"):
+            v = getattr(args, k, None)
+            if v:
+                cfg[k] = v
+        if args.preset and not args.base_url:
+            cfg["base_url"] = L.PRESETS[args.preset]["base_url"]
+        cfg["allow_remote"] = bool(args.allow_remote or cfg.get("allow_remote"))
+        L.save_config(cfg)
+    shown = {k: ("***" + str(v)[-4:] if k == "api_key" else v) for k, v in L.load_config().items()}
+    print(json.dumps(shown, ensure_ascii=False, indent=2) if shown else "no model configured")
+    if args.action == "test":
+        try:
+            c = L.client_from_config()
+            print(c.chat([{"role": "user", "content": "Reply with the single word: ok"}], max_tokens=5).strip())
+        except Exception as e:
+            info(str(e))
+            return 1
+    return 0
+
+
+def cmd_distill(args) -> int:
+    from . import distill as D
+    with open_store(args) as s:
+        if args.manual:
+            folder = Path(args.manual)
+            n = D.manual_import(s, folder) if (folder / "responses").is_dir() else 0
+            if n:
+                info(f"imported {n} cards from {folder / 'responses'}")
+            r = D.manual_export(s, folder, args.platform, args.limit)
+            if r["conversations"]:
+                info(f"{r['conversations']} conversations still need a card: {len(r['prompts'])} prompt file(s) in "
+                     f"{folder / 'prompts'} — see {folder / 'README.txt'}")
+                if not n:
+                    return 0
+            res = D.run(s, None, args.platform, args.limit, polish=False, progress=info)
+        else:
+            from .llm import client_from_config, RemoteNotAllowed
+            try:
+                client = client_from_config(model=args.model, base_url=args.base_url, allow_remote=args.allow_remote)
+            except (RuntimeError, RemoteNotAllowed) as e:
+                info(str(e))
+                info("No model? Use `ctxport distill --manual DIR` to paste the prompts into any chat AI instead.")
+                return 2
+            est = D.estimate(s, args.platform, args.limit)
+            info(f"model {client.model} at {client.base_url}: {est['conversations']} conversations need a card → "
+                 f"{est['calls']} calls, ~{est['chars']:,} characters (~{est['tokens_approx']:,} input tokens), "
+                 "plus a few calls to merge and write the profile.")
+            if args.dry_run:
+                return 0
+            if est["calls"] and not args.yes:
+                if not sys.stdin.isatty():
+                    info("add --yes to run non-interactively")
+                    return 2
+                if input("Send this to the model? [y/N] ").strip().lower() not in ("y", "yes"):
+                    return 1
+            res = D.run(s, client, args.platform, args.limit, polish=not args.no_polish, progress=info)
+        lg = res["log"]
+        print(f"profile: {res['profile']} ({res['chars']:,} characters)\n"
+              f"conversations {lg['conversations']} · cards new {lg['cards_new']} cached {lg['cards_cached']} "
+              f"failed {lg['cards_failed']} · facts {lg['facts_l1']} → {lg['facts_l2']} canonical\n"
+              f"coverage: full document {lg['coverage']['full']:.0%}, ChatGPT-size version "
+              f"{lg['coverage']['chatgpt_1400']:.0%} · tokens {lg['usage']}")
+    return 0
+
+
 def cmd_app(args) -> int:
     from .webapp import serve
     serve(args.port, open_browser=not args.no_open)
@@ -582,6 +659,8 @@ def _add_export_flags(p) -> None:
     p.add_argument("--out", default="ctxport-out", help="preview/output directory (default ./ctxport-out)")
     p.add_argument("--apply", action="store_true", help="also write into the real location (managed block)")
     p.add_argument("--project", help="project directory for CLAUDE.md / AGENTS.md / GEMINI.md")
+    p.add_argument("--distilled", action="store_true",
+                   help="use the full profile from `ctxport distill` instead of the memory list")
     p.add_argument("--platform", help="only conversations from these platforms (comma separated)")
     p.add_argument("--limit", type=int)
     p.add_argument("--since", help="e.g. 30d, 12h or 2026-01-01")
@@ -742,6 +821,27 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(fn=cmd_mcp_config)
 
     sub.add_parser("serve-mcp", help="run the MCP server on stdio").set_defaults(fn=cmd_serve_mcp)
+
+    p = sub.add_parser("llm", help="choose the model ctxport uses for distillation (your own provider/model)")
+    p.add_argument("action", choices=["show", "set", "test", "presets"])
+    p.add_argument("--preset", help="openai, anthropic, gemini, deepseek, moonshot, qwen, openrouter, ollama, lmstudio")
+    p.add_argument("--base-url")
+    p.add_argument("--model")
+    p.add_argument("--api-key", help="stored in ~/.ctxport/llm.json (0600); or set CTXPORT_LLM_API_KEY instead")
+    p.add_argument("--allow-remote", action="store_true", help="allow sending your text to a non-local endpoint")
+    p.set_defaults(fn=cmd_llm)
+
+    p = sub.add_parser("distill", help="coverage-guaranteed profile from all conversations, using your chosen model")
+    p.add_argument("--platform")
+    p.add_argument("--limit", type=int)
+    p.add_argument("--model")
+    p.add_argument("--base-url")
+    p.add_argument("--allow-remote", action="store_true")
+    p.add_argument("--dry-run", action="store_true", help="only show how much would be sent")
+    p.add_argument("--yes", action="store_true", help="don't ask for confirmation")
+    p.add_argument("--no-polish", action="store_true", help="model only for cards; merge and write without it")
+    p.add_argument("--manual", metavar="DIR", help="no API: write prompts to paste into any chat AI, import replies")
+    p.set_defaults(fn=cmd_distill)
 
     p = sub.add_parser("app", help="open the local app: review memories and import them into other AIs")
     p.add_argument("--port", type=int, default=8766)

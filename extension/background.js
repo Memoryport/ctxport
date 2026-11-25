@@ -109,6 +109,17 @@ function sendToTab(tabId, msg, tries = 20) {
   });
 }
 
+// Exact waits for content scripts (their own timers are throttled while the tab is in the background).
+// Touching an extension API every few seconds keeps this service worker alive during the wait.
+async function keepAliveSleep(ms) {
+  const end = Date.now() + Math.max(0, Math.min(ms, 10 * 60 * 1000));
+  while (Date.now() < end) {
+    await new Promise((r) => setTimeout(r, Math.min(5000, end - Date.now())));
+    await chrome.runtime.getPlatformInfo().catch(() => {});
+  }
+  return { ok: true };
+}
+
 // Gemini: scrape each conversation in one reusable background tab.
 async function geminiScrape(list, full) {
   const known = (await server("/known?platform=gemini-web")).known || {};
@@ -277,6 +288,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return server(`/known?platform=${encodeURIComponent(msg.platform)}`);
       case "ingest":
         return server("/ingest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(msg.payload) });
+      case "sleep":
+        return keepAliveSleep(Number(msg.ms) || 0);
       case "progress":
         await log(msg.platform, msg.text);
         return { ok: true };

@@ -123,6 +123,29 @@
     </div>
   </section>
 
+  <h2>完整记忆档案</h2>
+  <p class="sub">用你自己选的模型，把所有对话分层提炼成一份完整档案：每个对话一张“情节卡”，合并去重，再写成按主题分组的档案。程序会检查每一条事实都被写进去（覆盖率），生成后上面各处的“一键导入”都会改用这份档案。</p>
+  <div class="hero">
+    <div class="panel memcard">
+      <div class="row"><b>档案状态</b><span class="note" id="d-run"></span></div>
+      <div id="d-status" class="note">加载中…</div>
+      <div class="actions">
+        <button id="d-est">估算发送量</button>
+        <button class="primary" id="d-start">开始提炼</button>
+      </div>
+      <pre id="d-lines" class="note" style="white-space:pre-wrap;margin:0;max-height:140px;overflow:auto"></pre>
+    </div>
+    <div class="panel memcard">
+      <div class="row"><b>使用的模型</b><span class="note">由你选择；ctxport 不内置模型</span></div>
+      <select id="l-preset" style="font:inherit;padding:7px;border-radius:8px;border:1px solid var(--line);background:var(--soft);color:var(--fg)"></select>
+      <input type="text" id="l-model" placeholder="模型名，例如服务商文档里的 model id">
+      <input type="text" id="l-base" placeholder="接口地址（选了服务商会自动填）">
+      <input type="password" id="l-key" placeholder="API Key（本地模型可不填）" style="font:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;background:var(--soft);color:var(--fg)">
+      <label class="note"><input type="checkbox" id="l-remote"> 允许把对话内容发送到这个非本机地址</label>
+      <div class="actions"><button id="l-save">保存</button></div>
+    </div>
+  </div>
+
   <h2>编程 Agent</h2>
   <p class="sub">把已确认的记忆写进它们的指令文件。只改 ctxport 自己那一块，你原来写的内容不动，第一次写入前自动备份。</p>
   <div class="grid" id="agents"></div>
@@ -399,10 +422,57 @@ async function bulk(status) {
 $("#dr-all-acc").onclick = () => bulk("accepted").catch((e) => toast(e.message, true));
 $("#dr-all-rej").onclick = () => bulk("rejected").catch((e) => toast(e.message, true));
 
+// ------------------------------------------------------------ distillation
+let presets = {};
+async function loadLLM() {
+  const r = await api("/api/llm");
+  presets = r.presets;
+  const c = r.config || {};
+  $("#l-preset").innerHTML = `<option value="">选择服务商…</option>` +
+    Object.entries(presets).map(([k, v]) => `<option value="${esc(k)}">${esc(v.label)}</option>`).join("");
+  $("#l-preset").value = c.preset || "";
+  $("#l-model").value = c.model || "";
+  $("#l-base").value = c.base_url || "";
+  $("#l-key").value = c.api_key || "";
+  $("#l-remote").checked = !!c.allow_remote;
+}
+$("#l-preset").onchange = () => { const p = presets[$("#l-preset").value]; if (p) $("#l-base").value = p.base_url; };
+$("#l-save").onclick = () => run($("#l-save"), async () => {
+  await api("/api/llm", { preset: $("#l-preset").value, model: $("#l-model").value, base_url: $("#l-base").value,
+    api_key: $("#l-key").value, allow_remote: $("#l-remote").checked });
+  toast("模型设置已保存");
+  loadLLM();
+});
+const pct = (x) => (x == null ? "–" : Math.round(x * 100) + "%");
+async function loadDistill() {
+  const st = await api("/api/distill/status");
+  const lr = st.last_run;
+  $("#d-status").innerHTML = st.profile_exists
+    ? `已生成：<b>${fmt(st.profile_chars)}</b> 字 · 完整版覆盖率 <b>${pct(lr && lr.coverage.full)}</b> · ChatGPT 精简版覆盖 ${pct(lr && lr.coverage.chatgpt_1400)}<br>` +
+      (lr ? `${fmt(lr.conversations)} 个对话 · ${fmt(lr.facts_l1)} 条事实 → ${fmt(lr.facts_l2)} 条合并后` : "")
+    : "还没有生成。先在右边选好模型并保存。";
+  $("#d-run").textContent = lr ? `上次：${lr.model || "无模型"}` : "";
+  $("#d-lines").textContent = (st.lines || []).join("\n") + (st.error ? "\n错误：" + st.error : "");
+  $("#d-start").disabled = st.running;
+  $("#d-start").textContent = st.running ? "提炼中…" : "开始提炼";
+  if (st.running) setTimeout(loadDistill, 3000);
+  else if (st.result) { loadOverview(); }
+}
+$("#d-est").onclick = () => run($("#d-est"), async () => {
+  const e = await api("/api/distill/estimate", {});
+  toast(`将用 ${e.model} 处理 ${fmt(e.conversations)} 个新对话：约 ${fmt(e.calls)} 次调用、${fmt(e.tokens_approx)} 个输入 token（另有少量合并调用）。已处理过的对话会跳过。`);
+});
+$("#d-start").onclick = () => run($("#d-start"), async () => {
+  const e = await api("/api/distill/estimate", {});
+  if (!confirm(`要把 ${fmt(e.conversations)} 个对话（约 ${fmt(e.tokens_approx)} 个 token，已遮蔽密钥）发送给 ${e.model}（${e.base_url}）进行提炼吗？`)) return;
+  await api("/api/distill/start", { confirm: true });
+  setTimeout(loadDistill, 800);
+});
+
 // ------------------------------------------------------------ start
 (async () => {
   if (!TOKEN) { toast("缺少访问令牌：请用 `ctxport app` 打开这个页面", true); return; }
-  try { await Promise.all([loadOverview(), loadTargets()]); } catch (e) { toast(e.message, true); }
+  try { await Promise.all([loadOverview(), loadTargets(), loadLLM(), loadDistill()]); } catch (e) { toast(e.message, true); }
 })();
 </script>
 </body>

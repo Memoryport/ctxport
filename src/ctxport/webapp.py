@@ -54,6 +54,11 @@ def exports_dir() -> Path:
 
 def memory_text(store: Store, target: str) -> str:
     """The text ctxport would put into `target` (accepted memories only, secrets masked)."""
+    from .distill import out_dir
+    if target in ("chatgpt", "claude-ai", "gemini-web", "cursor") and (out_dir() / "profile.md").exists():
+        from .redact import redact as _redact
+        name = "profile.short.md" if target == "chatgpt" else "profile.md"
+        return _redact((out_dir() / name).read_text(encoding="utf-8"))
     from .adapters import get_exporter
     from .adapters.base import ExportOptions
     if target == "chatgpt":
@@ -106,7 +111,9 @@ def apply_agent(key: str, project: Optional[str] = None) -> dict:
     if proj is not None and not proj.is_dir():
         raise ValueError(f"项目文件夹不存在：{proj}")
     with Store() as s:
-        r = export_and_apply(s, key, ExportOptions(out_dir=exports_dir(), apply=True, project=proj))
+        from .distill import out_dir
+        r = export_and_apply(s, key, ExportOptions(out_dir=exports_dir(), apply=True, project=proj,
+                                                   extra={"distilled": (out_dir() / "profile.md").exists()}))
     return {"ok": True, "applied": r["applied"]}
 
 
@@ -196,6 +203,89 @@ def targets() -> dict:
             "web": [{"key": k, **v} for k, v in WEB_TARGETS.items()], "apps": apps}
 
 
+# ---------------------------------------------------------------- distillation (user-chosen model)
+
+_DISTILL = {"running": False, "lines": [], "result": None, "error": None}
+_DISTILL_LOCK = threading.Lock()
+
+
+def llm_settings() -> dict:
+    from . import llm as L
+    cfg = L.load_config()
+    if cfg.get("api_key"):
+        cfg["api_key"] = "***" + str(cfg["api_key"])[-4:]
+    return {"config": cfg, "presets": L.PRESETS}
+
+
+def save_llm(payload: dict) -> dict:
+    from . import llm as L
+    cfg = L.load_config()
+    preset = payload.get("preset") or cfg.get("preset")
+    if preset and preset not in L.PRESETS:
+        raise ValueError("unknown preset")
+    cfg["preset"] = preset
+    cfg["base_url"] = (payload.get("base_url") or "").strip() or (L.PRESETS[preset]["base_url"] if preset else "")
+    cfg["model"] = (payload.get("model") or "").strip()
+    if payload.get("api_key") and not str(payload["api_key"]).startswith("***"):
+        cfg["api_key"] = payload["api_key"].strip()
+    cfg["allow_remote"] = bool(payload.get("allow_remote"))
+    L.save_config(cfg)
+    return llm_settings()
+
+
+def distill_status() -> dict:
+    from .distill import out_dir
+    p = out_dir() / "profile.md"
+    runs = sorted(out_dir().glob("run-*.json")) if out_dir().exists() else []
+    last = json.loads(runs[-1].read_text(encoding="utf-8")) if runs else None
+    with _DISTILL_LOCK:
+        st = {k: (list(v) if isinstance(v, list) else v) for k, v in _DISTILL.items()}
+    st["lines"] = st["lines"][-30:]
+    st.update({"profile_exists": p.exists(), "profile_chars": len(p.read_text(encoding="utf-8")) if p.exists() else 0,
+               "last_run": last})
+    return st
+
+
+def distill_estimate() -> dict:
+    from .distill import estimate
+    from .llm import client_from_config
+    c = client_from_config()  # raises with a clear message when no model is set or remote isn't allowed
+    with Store() as s:
+        e = estimate(s)
+    e.update({"model": c.model, "base_url": c.base_url})
+    return e
+
+
+def distill_start() -> dict:
+    from . import distill as D
+    from .llm import client_from_config
+    client = client_from_config()
+    with _DISTILL_LOCK:
+        if _DISTILL["running"]:
+            raise ValueError("已经在提炼中")
+        _DISTILL.update(running=True, lines=[], result=None, error=None)
+
+    def note(line: str) -> None:
+        with _DISTILL_LOCK:
+            _DISTILL["lines"].append(line)
+
+    def work() -> None:
+        try:
+            with Store() as s:
+                r = D.run(s, client, progress=note)
+            with _DISTILL_LOCK:
+                _DISTILL["result"] = {"chars": r["chars"], "log": r["log"]}
+        except Exception as e:
+            with _DISTILL_LOCK:
+                _DISTILL["error"] = f"{type(e).__name__}: {e}"
+        finally:
+            with _DISTILL_LOCK:
+                _DISTILL["running"] = False
+
+    threading.Thread(target=work, daemon=True).start()
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------- HTTP
 
 class AppHandler(BaseHTTPRequestHandler):
@@ -256,6 +346,10 @@ class AppHandler(BaseHTTPRequestHandler):
                 return self._json(200, {"memories": memories_list(q.get("status", "accepted"))})
             if u.path == "/api/targets":
                 return self._json(200, targets())
+            if u.path == "/api/llm":
+                return self._json(200, llm_settings())
+            if u.path == "/api/distill/status":
+                return self._json(200, distill_status())
             if u.path == "/api/text":
                 with Store() as s:
                     return self._json(200, {"text": memory_text(s, q.get("target", ""))})
@@ -283,6 +377,14 @@ class AppHandler(BaseHTTPRequestHandler):
         from . import connect
         path = urlparse(self.path).path
         try:
+            if path == "/api/llm":
+                return self._json(200, save_llm(payload))
+            if path == "/api/distill/estimate":
+                return self._json(200, distill_estimate())
+            if path == "/api/distill/start":
+                if payload.get("confirm") is not True:
+                    return self._json(400, {"error": "confirmation required"})
+                return self._json(200, distill_start())
             if path == "/api/memories/update":
                 return self._json(200, memories_update(payload))
             if path == "/api/agent/apply":
