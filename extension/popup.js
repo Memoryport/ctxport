@@ -4,7 +4,12 @@ const $ = (id) => document.getElementById(id);
 function fmtStatus(s) {
   if (!s) return ["–", ""];
   const when = new Date(s.at).toLocaleString();
-  if (s.state === "running") return ["同步中…", ""];
+  if (s.state === "running") {
+    const last = s.beat || s.at;
+    const min = Math.floor((Date.now() - last) / 60000);
+    if (min >= 10) return [`同步中…但已 ${min} 分钟没有进展，可刷新该网站标签页后重新同步`, "err"];
+    return [min >= 1 ? `同步中…（${min} 分钟前有进展）` : "同步中…", ""];
+  }
   if (s.state === "error") return [s.error, "err"];
   const r = s.result || {};
   return [`${r.total ?? "?"} 个对话 · 本次 ${r.imported ?? 0}${r.failed ? ` · ${r.failed} 个下载失败（下次重试）` : ""} · ${when}`, r.failed ? "err" : "ok"];

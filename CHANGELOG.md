@@ -6,6 +6,17 @@ All notable changes to ctxport are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `ctxport app`: a local web app (127.0.0.1, per-launch random token, Host and Origin checks) to review memories and
+  import them with one click into Claude Code, Codex, Gemini CLI, Antigravity and Cursor (project rule or User
+  Rules text), to connect the ctxport MCP server to Claude Desktop, Claude Code, Codex, Cursor, Gemini CLI and
+  Antigravity (only the `ctxport` entry is touched; unreadable config files are never overwritten), and to prepare
+  Chatbox / Cherry Studio imports.
+- The browser extension can write memories into ChatGPT custom instructions (keeping the user's own "about you"
+  text), the Claude.ai memory import page and Gemini saved info (form filling, experimental). The text comes from
+  the paired receiver's new `/memory-text` endpoint, never from a web page.
+- `cursor` export target.
+
 ### Changed
 - Re-syncing a conversation rewrites only the messages that changed. The browser extension sends a whole
   conversation again after each new exchange; before, every message was deleted and re-inserted together with its

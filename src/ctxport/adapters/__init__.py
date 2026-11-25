@@ -7,7 +7,7 @@ from .base import EXPORTERS, IMPORTERS, Exporter, Importer
 
 _MODULES = [
     "chatgpt", "claude_ai", "claude_code", "codex", "gemini_cli", "gemini_web",
-    "antigravity", "cherry_studio", "chatbox", "generic",
+    "antigravity", "cherry_studio", "chatbox", "generic", "cursor",
 ]
 _loaded = False
 

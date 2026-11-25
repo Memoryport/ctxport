@@ -48,6 +48,9 @@ version = { attr = "ctxport.__version__" }  # single source: src/ctxport/__init_
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+ctxport = ["web/*.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

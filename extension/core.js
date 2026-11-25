@@ -41,7 +41,7 @@
       await waitGate(io, gate);
       try {
         const r = await fn();
-        if (gate && ++gate.ok >= 25 && gate.cur < gate.max) { gate.cur++; gate.ok = 0; }
+        if (gate && ++gate.ok >= 25 && gate.cur < gate.max) { gate.cur++; gate.ok = 0; wakeAll(gate); }
         return r;
       } catch (e) {
         const status = e && e.status;
@@ -69,6 +69,12 @@
   // An error that makes going on pointless: signed out (401/403), or the local ctxport server refused the data.
   const isFatal = (e) => !!e && (e.status === 401 || e.status === 403 || e.fatal === true);
 
+  function wakeAll(gate) {
+    const w = gate.wake || [];
+    gate.wake = [];
+    for (const r of w) r();
+  }
+
   // Run `fn` over `items` with at most `n` in flight (or fewer while `gate.cur` is lowered after a 429).
   // One item that keeps failing is logged and skipped (it is fetched again next sync, since it never reached
   // the inbox), so it cannot abort the whole sync. A fatal error stops every worker, and is rethrown only once
@@ -78,18 +84,25 @@
     let next = 0, failed = 0, fatal = null;
     const worker = async (_, w) => {
       while (next < items.length && !fatal) {
-        if (gate && w >= gate.cur) {  // this worker is parked until the limit grows again
-          await (io ? io.sleep(1000) : new Promise((r) => setTimeout(r, 1000)));
+        if (gate && w >= gate.cur) {
+          // Parked until the limit grows again or the work runs out. A promise, not a polling timer:
+          // browsers throttle timers in background tabs to about one per minute.
+          await new Promise((r) => (gate.wake = gate.wake || []).push(r));
           continue;
         }
         const i = next++;
         try {
           await fn(items[i], i);
         } catch (e) {
-          if (isFatal(e)) { fatal = fatal || e; break; }
-          failed++;
-          if (io && io.log) io.log(`skipped one item after repeated errors: ${(e && (e.status || e.message)) || e}`);
+          if (isFatal(e)) { fatal = fatal || e; }
+          else {
+            failed++;
+            if (io && io.log) io.log(`skipped one item after repeated errors: ${(e && (e.status || e.message)) || e}`);
+          }
+        } finally {
+          if (gate && (next >= items.length || fatal)) wakeAll(gate);
         }
+        if (fatal) break;
       }
     };
     await Promise.all(Array.from({ length: Math.min(n, items.length) }, worker));
@@ -137,7 +150,6 @@
         more = pages.every((p) => ((p && p.items) || []).length === 100);
         offset += offs.length * 100;
         io.log(`ChatGPT: listed ${items.size} ${archived ? "archived " : ""}conversations…`);
-        if (more) await io.sleep(300);
       }
       if (reported != null && reported !== items.size && !archived) {
         io.log(`ChatGPT: server reported total=${reported}, listed ${items.size} (the list walk is authoritative)`);
@@ -177,7 +189,6 @@
       }
       if (buf.length >= BATCH) { const r = await flush(io, "chatgpt", buf); sent += r.conversations || 0; }
       if (done % 10 === 0) io.log(`ChatGPT: ${done}/${todo.length}`);
-      await io.sleep(150);
     }, gate, io);
     const extra = {};
     try { const m = await get("/backend-api/memories?include_memory_entries=true"); if (m) extra.memories = m.memories || m.items || []; } catch (e) { /* optional */ }
@@ -224,8 +235,7 @@
         }
         if (buf.length >= BATCH) { const r = await flush(io, "claude-ai", buf); sent += r.conversations || 0; }
         if (done % 10 === 0) io.log(`Claude: ${done}/${todo.length}`);
-        await io.sleep(150);
-      }, gate, io);
+        }, gate, io);
       const extra = {};
       try {
         const projects = await get(`${base}/projects`);
@@ -318,6 +328,87 @@
     return list.filter((c, i) => full || !(c.id in (known || {})) || i < n);
   }
 
+  // ------------------------------------------------------------------ writing memory into web AIs
+  const CTX_MARK = "[ctxport]";
+
+  // ChatGPT keeps "about you" as one text field (1500 chars). Keep the user's own text, replace only the part
+  // from the [ctxport] marker to the end, and shorten ctxport's part (never the user's) to fit the limit.
+  function mergeAbout(existing, text, limit) {
+    const own = String(existing || "").split(CTX_MARK)[0].replace(/\s+$/, "");
+    const sep = own ? "\n\n" : "";
+    const room = limit - own.length - sep.length - CTX_MARK.length - 1;
+    if (room < 80) return { value: own, fitted: 0, truncated: true };
+    let body = String(text || "").trim();
+    let truncated = false;
+    if (body.length > room) {
+      body = body.slice(0, room);
+      const cut = body.lastIndexOf("\n");
+      if (cut > room * 0.6) body = body.slice(0, cut);
+      truncated = true;
+    }
+    return { value: `${own}${sep}${CTX_MARK}\n${body}`, fitted: body.length, truncated };
+  }
+
+  async function writeChatGPTMemory(io, text) {
+    const session = await io.getJSON("/api/auth/session");
+    if (!session || !session.accessToken) throw Object.assign(new Error("没有登录 ChatGPT"), { status: 401 });
+    const H = { Authorization: "Bearer " + session.accessToken };
+    const cur = (await io.getJSON("/backend-api/user_system_messages", H)) || {};
+    const merged = mergeAbout(cur.about_user_message, text, 1500);
+    if (!merged.fitted) throw new Error("ChatGPT“关于你”里你自己写的内容已接近 1500 字上限，没有空间写入");
+    await io.postJSON("/backend-api/user_system_messages", Object.assign({}, cur, {
+      about_user_message: merged.value,
+      about_model_message: cur.about_model_message || "",
+      enabled: true,
+    }), H);
+    return { ok: true, message: `已写入 ChatGPT 自定义指令（关于你）${merged.truncated ? "，因 1500 字上限做了截断" : ""}` };
+  }
+
+  // Claude.ai's import-memory page and Gemini's saved-info page are plain forms: put the text into the
+  // input and press the page's own add/save button. Experimental: page layouts change.
+  function setFieldValue(el, value, win) {
+    if (el.isContentEditable) {
+      el.focus();
+      el.textContent = value;
+    } else {
+      const proto = el.tagName === "TEXTAREA" ? win.HTMLTextAreaElement.prototype : win.HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, "value").set;
+      setter.call(el, value);
+    }
+    el.dispatchEvent(new win.Event("input", { bubbles: true }));
+    el.dispatchEvent(new win.Event("change", { bubbles: true }));
+  }
+
+  function findButton(doc, re) {
+    return [...doc.querySelectorAll("button, [role='button']")].find((b) => {
+      const label = `${b.innerText || b.textContent || ""} ${b.getAttribute("aria-label") || ""}`.trim();
+      return re.test(label) && !b.disabled && b.getAttribute("aria-disabled") !== "true";
+    });
+  }
+
+  async function fillMemoryForm(doc, win, text, opts) {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const timeout = (opts && opts.timeout) || 15000;
+    const field = () => [...doc.querySelectorAll("textarea, [contenteditable='true'], input[type='text']")]
+      .find((el) => !el.disabled && (el.offsetParent !== null || el.getClientRects == null || el.getClientRects().length));
+    const t0 = Date.now();
+    let el = field();
+    while (!el && Date.now() - t0 < timeout) {
+      const open = findButton(doc, (opts && opts.openButton) || /^(add|添加|新增|\+)/i);
+      if (open) open.click();
+      await sleep(600);
+      el = field();
+    }
+    if (!el) throw new Error("页面上找不到输入框（页面可能改版了），请用“复制并打开网页”手动粘贴");
+    setFieldValue(el, text, win);
+    await sleep(300);
+    const submit = findButton(doc, (opts && opts.submitButton) || /(add to memory|添加到记忆|submit|提交|save|保存|^add$|^添加$)/i);
+    if (!submit) throw new Error("已填好文本，但找不到提交按钮，请在页面上手动点保存");
+    submit.click();
+    return { ok: true, message: "已在页面里填好并点击了保存，请在页面上确认结果" };
+  }
+
   root.CtxportCore = { syncChatGPT, syncClaude, scrapeGeminiConversation, listGeminiConversations, geminiTodo,
-    GEMINI_RECENT_REFRESH, withRetry, pool, concurrency, makeGate, DEFAULT_CONCURRENCY };
+    GEMINI_RECENT_REFRESH, withRetry, pool, concurrency, makeGate, DEFAULT_CONCURRENCY,
+    mergeAbout, writeChatGPTMemory, fillMemoryForm };
 })(typeof globalThis !== "undefined" ? globalThis : this);

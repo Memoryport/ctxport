@@ -41,6 +41,13 @@
         }
         return res.json();
       },
+      postJSON: async (url, body, headers) => {
+        const res = await fetch(url, { method: "POST", credentials: "include",
+          headers: Object.assign({ Accept: "application/json", "Content-Type": "application/json" }, headers || {}),
+          body: JSON.stringify(body) });
+        if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status });
+        return res.json().catch(() => ({}));
+      },
     };
   }
 
@@ -67,6 +74,12 @@
     if (msg && msg.type === "sync" && msg.platform === platform) {
       run(!!msg.full).then((r) => sendResponse({ ok: true, result: r }))
         .catch((e) => sendResponse({ ok: false, error: String(e.message || e), status: e.status }));
+      return true;
+    }
+    if (msg && msg.type === "write-memory" && msg.platform === platform) {
+      const job = platform === "chatgpt" ? Core.writeChatGPTMemory(makeIO(false), msg.text)
+        : Core.fillMemoryForm(document, window, msg.text, {});
+      job.then((r) => sendResponse(r)).catch((e) => sendResponse({ ok: false, error: String(e.message || e) }));
       return true;
     }
     if (msg && msg.type === "gemini-scrape-here" && platform === "gemini-web") {

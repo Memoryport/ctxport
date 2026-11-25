@@ -51,9 +51,14 @@ function updateStorage(fn) {
 
 function log(platform, text) {
   return updateStorage(async () => {
-    const { log } = await cfg();
+    const { log, status } = await cfg();
     log.push(`${new Date().toLocaleTimeString()} [${platform}] ${text}`);
-    await chrome.storage.local.set({ log: log.slice(-200) });
+    const update = { log: log.slice(-200) };
+    if (status[platform] && status[platform].state === "running") {  // heartbeat, shown in the popup
+      status[platform].beat = Date.now();
+      update.status = status;
+    }
+    await chrome.storage.local.set(update);
     chrome.runtime.sendMessage({ type: "log-updated" }).catch(() => {});
   });
 }
@@ -194,9 +199,22 @@ async function syncSite(platform, full) {
     await waitTabComplete(tab.id);
   }
   await setStatus(platform, { state: "running" });
+  // Edge/Chrome put idle background tabs to sleep, which silently kills a long sync: keep this tab awake
+  // while it syncs, and if the tab dies anyway, wake it and continue (already-saved conversations are skipped).
+  chrome.tabs.update(tab.id, { autoDiscardable: false }).catch(() => {});
   try {
-    await ensureContentScript(tab.id);
-    const r = await sendToTab(tab.id, { type: "sync", platform, full });
+    let r;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await ensureContentScript(tab.id);
+        r = await sendToTab(tab.id, { type: "sync", platform, full: full && attempt === 1 });
+        break;
+      } catch (e) {
+        const lost = /port closed|Receiving end|No tab|discard|context invalidated/i.test(String(e && e.message));
+        if (!lost || attempt >= 3) throw e;
+        await log(platform, `tab was put to sleep or reloaded — resuming (attempt ${attempt + 1})`);
+      }
+    }
     if (!r || !r.ok) throw Object.assign(new Error((r && r.error) || "no response"), { status: r && r.status });
     await setStatus(platform, { state: "done", result: r.result });
     await log(platform, "done: " + JSON.stringify(r.result));
@@ -208,6 +226,7 @@ async function syncSite(platform, full) {
     return { platform, error: msg };
   } finally {
     if (opened) chrome.tabs.remove(opened.id).catch(() => {});
+    else chrome.tabs.update(tab.id, { autoDiscardable: true }).catch(() => {});
   }
 }
 
@@ -217,6 +236,33 @@ async function syncAll(full, platforms) {
   const list = platforms || Object.keys(SITES);
   const results = await Promise.allSettled(list.map((p) => syncSite(p, full)));
   return results.map((r, i) => (r.status === "fulfilled" ? r.value : { platform: list[i], error: String(r.reason) }));
+}
+
+// "一键写入" from the local ctxport app page: the text always comes from the paired ctxport receiver (the user's
+// accepted memories), never from the page, so no web page can write its own text into the user's accounts.
+const MEMORY_PAGES = {
+  "chatgpt": "https://chatgpt.com/",
+  "claude-ai": "https://claude.ai/import-memory",
+  "gemini-web": "https://gemini.google.com/saved-info",
+};
+
+async function pushMemory(target, sender) {
+  const from = (sender && (sender.url || (sender.tab && sender.tab.url))) || "";
+  if (!/^http:\/\/(127\.0\.0\.1|localhost):\d+\//.test(from)) return { ok: false, error: "only the local ctxport app may ask" };
+  if (!MEMORY_PAGES[target]) return { ok: false, error: "unknown target" };
+  const { text } = await server(`/memory-text?target=${encodeURIComponent(target)}`);
+  if (!text || !text.trim()) return { ok: false, error: "还没有已确认的记忆，先在 ctxport 里审核记忆" };
+  let tab;
+  if (target === "chatgpt") {
+    tab = (await chrome.tabs.query({ url: SITES.chatgpt.match })).find((t) => !(t.url || "").includes("ctxport-scrape"));
+  }
+  if (!tab) tab = await chrome.tabs.create({ url: MEMORY_PAGES[target], active: target !== "chatgpt" });
+  else if (target !== "chatgpt") await chrome.tabs.update(tab.id, { url: MEMORY_PAGES[target], active: true });
+  await waitTabComplete(tab.id);
+  await ensureContentScript(tab.id);
+  const r = await sendToTab(tab.id, { type: "write-memory", platform: target, text });
+  await log(target, r && r.ok ? (r.message || "memory written") : "memory write failed: " + ((r && r.error) || "?"));
+  return r || { ok: false, error: "no response" };
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -240,6 +286,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return geminiScrape(msg.list || [], !!msg.full);
       case "sync-all":
         return syncAll(!!msg.full, msg.platforms);
+      case "push-memory":
+        return pushMemory(msg.target, sender);
       default:
         return { error: "unknown message" };
     }

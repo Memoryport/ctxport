@@ -304,6 +304,15 @@ class Handler(BaseHTTPRequestHandler):
         m = re.match(r"^/known\?platform=([\w-]+)$", self.path)
         if m:
             return self._send(200, {"known": self.state.known(m.group(1))})
+        # The extension fetches the text to write into a site's memory from here (never from a web page),
+        # so only the user's own accepted, masked memories can ever be written into their accounts.
+        m = re.match(r"^/memory-text\?target=(chatgpt|claude-ai|gemini-web)$", self.path)
+        if m:
+            from .webapp import memory_text
+            with Store(self.state.db_path) as s:
+                text = memory_text(s, m.group(1))
+                n = len(s.memories(status=("accepted",)))
+            return self._send(200, {"text": text, "accepted": n})
         return self._send(404, {"error": "not found"})
 
     def do_POST(self):  # noqa: N802

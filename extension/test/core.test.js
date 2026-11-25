@@ -262,7 +262,70 @@ async function testParallel() {
   assert.strictEqual(gate.cur, 1);
 }
 
+async function testPoolWithoutTimers() {
+  // workers parked by a lowered limit must wake from promises, not polling timers (throttled in background tabs)
+  const gate = Core.makeGate(4);
+  gate.cur = 1;
+  const io = { sleep: () => { throw new Error("pool must not poll with timers"); }, log() {} };
+  const done = [];
+  await Core.pool(Array.from({ length: 12 }, (_, i) => i), 4, async (x) => {
+    await Promise.resolve();
+    done.push(x);
+    if (x === 3) { gate.cur = 3; }  // limit grows mid-way
+  }, gate, io);
+  assert.strictEqual(done.length, 12);
+}
+
+async function testWriteMemory() {
+  // the user's own "about you" text is kept; only the [ctxport] part is replaced, and it is the part that shrinks
+  const m1 = Core.mergeAbout("I am a nurse.", "- likes tea\n- studies physics", 1500);
+  assert.strictEqual(m1.value, "I am a nurse.\n\n[ctxport]\n- likes tea\n- studies physics");
+  const m2 = Core.mergeAbout(m1.value, "- new fact", 1500);
+  assert.strictEqual(m2.value, "I am a nurse.\n\n[ctxport]\n- new fact");
+  const long = Array.from({ length: 300 }, (_, i) => "- fact number " + i).join("\n");
+  const m3 = Core.mergeAbout("x".repeat(200), long, 1500);
+  assert.ok(m3.value.length <= 1500 && m3.truncated && m3.value.startsWith("x".repeat(200)));
+  assert.strictEqual(Core.mergeAbout("y".repeat(1460), "- a", 1500).fitted, 0, "no room: user's text wins");
+
+  const posted = [];
+  const io = {
+    getJSON: async (u) => (u === "/api/auth/session" ? { accessToken: "T" }
+      : { about_user_message: "I am a nurse.", about_model_message: "Be brief.", enabled: true }),
+    postJSON: async (u, body, h) => { posted.push({ u, body, h }); return {}; },
+  };
+  const r = await Core.writeChatGPTMemory(io, "- likes tea");
+  assert.ok(r.ok);
+  assert.strictEqual(posted[0].u, "/backend-api/user_system_messages");
+  assert.strictEqual(posted[0].body.about_model_message, "Be brief.", "the model part is untouched");
+  assert.strictEqual(posted[0].body.about_user_message, "I am a nurse.\n\n[ctxport]\n- likes tea");
+  assert.strictEqual(posted[0].h.Authorization, "Bearer T");
+  await assert.rejects(Core.writeChatGPTMemory({ getJSON: async () => ({}) }, "x"), /没有登录/);
+
+  // form filler: open the dialog, set the textarea through the native setter, press the page's save button
+  class FakeTextArea { constructor() { this.tagName = "TEXTAREA"; this._v = ""; this.events = []; this.offsetParent = {}; }
+    dispatchEvent(e) { this.events.push(e.type); } }
+  Object.defineProperty(FakeTextArea.prototype, "value", { get() { return this._v; }, set(v) { this._v = v; }, configurable: true });
+  const area = new FakeTextArea();
+  let opened = false, saved = false;
+  const btn = (label, fn) => ({ innerText: label, getAttribute: () => null, disabled: false, click: fn });
+  const doc = {
+    querySelectorAll(sel) {
+      if (sel.startsWith("textarea")) return opened ? [area] : [];
+      return opened ? [btn("Cancel", () => {}), btn("Save", () => { saved = true; })] : [btn("Add", () => { opened = true; })];
+    },
+  };
+  const win = { HTMLTextAreaElement: FakeTextArea, HTMLInputElement: FakeTextArea, Event: class { constructor(t) { this.type = t; } } };
+  const fr = await Core.fillMemoryForm(doc, win, "- likes tea", { timeout: 3000 });
+  assert.ok(fr.ok && opened && saved);
+  assert.strictEqual(area.value, "- likes tea");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(area.events)), ["input", "change"]);
+  const empty = { querySelectorAll: () => [] };
+  await assert.rejects(Core.fillMemoryForm(empty, win, "x", { timeout: 50 }), /找不到输入框/);
+}
+
 (async () => {
+  await testPoolWithoutTimers();
+  await testWriteMemory();
   await testParallel();
   await testChatGPT();
   await testClaude();

@@ -100,6 +100,24 @@ ctxport search 机器学习 部署       # 中文 ≥3 字走 FTS5，2 字自动
 
 默认**只写预览**到 `./ctxport-out/`；只有加 `--apply` 才写入真实位置，而且只改 `<!-- ctxport:begin … -->` 到 `<!-- ctxport:end -->` 之间的区块，第一次写入前把原文件备份为 `*.ctxport.bak`。
 
+## 一键导入到其他 AI：`ctxport app`
+
+```bash
+ctxport app
+```
+
+在浏览器里打开一个只在本机运行的页面（`127.0.0.1`，每次启动都有新的随机访问令牌），不用记命令：
+
+| 区块 | 一键做什么 |
+|---|---|
+| 记忆 | 审核候选记忆：保留 / 不要 / 直接改写，也能批量处理；只有“已确认”的会被导入 |
+| 编程 Agent | 写进 Claude Code（`~/.claude/CLAUDE.md`）、Codex（`~/.codex/AGENTS.md`）、Gemini CLI（`~/.gemini/GEMINI.md`）、Antigravity（`~/.gemini/AGENTS.md`）；Cursor 写成项目规则 `.cursor/rules/ctxport.mdc`，或复制到 User Rules。只改 ctxport 那一块，第一次写入前备份 `*.ctxport.bak` |
+| 给 Agent 接上 MCP | 把 ctxport 注册进 Claude Desktop、Claude Code、Codex、Cursor、Gemini CLI、Antigravity，它们就能随时搜索你的全部历史。只增删 `ctxport` 这一项，其他配置不动，读不懂的配置文件绝不覆盖，可一键断开 |
+| 网页版 AI 的记忆 | 装了 [浏览器扩展](extension/README.md) 时直接写入：ChatGPT 自定义指令“关于你”（保留你自己写的部分，只替换 `[ctxport]` 之后的内容，自动控制在 1500 字内）、Claude.ai 记忆导入页、Gemini 已保存的信息（后两个是页面自动填写，属实验性）。没装扩展时复制文本并打开对应网页 |
+| 桌面聊天应用 | 为 Chatbox 生成可导入的备份文件、为 Cherry Studio 生成助手提示词，在访达里定位并打开应用（不改它们的数据库） |
+
+写进网页账号的文字永远由扩展从本机 ctxport 读取（只含已确认、已遮蔽密钥的记忆），网页本身无法指定要写入的内容。
+
 ## 一条命令总结你的个人背景
 
 换到一个新助手、想让它马上了解你？`ctxport profile` 把你的记忆和最近聊过的话题整理成一页简短的“我的背景”，可以直接粘贴。除非你用 `--llm` 并指定远程地址，否则数据不会离开本机。

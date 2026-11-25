@@ -17,6 +17,11 @@
       "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*", "https://claude.ai/*", "https://gemini.google.com/*"],
       "js": ["core.js", "content.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["http://127.0.0.1/*"],
+      "js": ["app-bridge.js"],
+      "run_at": "document_end"
     }
   ],
   "action": { "default_popup": "popup.html", "default_title": "ctxport", "default_icon": { "16": "icons/16.png", "48": "icons/48.png", "128": "icons/128.png" } },

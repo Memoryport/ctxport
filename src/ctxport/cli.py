@@ -275,30 +275,46 @@ def _export_opts(args) -> ExportOptions:
         include_reasoning=args.include_reasoning, redact=not args.no_redact, include_raw=args.include_raw)
 
 
-def run_export(store: Store, target: str, opts: ExportOptions) -> list:
+def export_and_apply(store: Store, target: str, opts: ExportOptions) -> dict:
+    """Render `target` into opts.out_dir and, with opts.apply, update the managed blocks in the real files.
+
+    Returns {"written": [...], "applied": [{"path", "backup", ...}], "appliable": bool, "instructions": str}.
+    Shared by the CLI and the local app."""
     ex = get_exporter(target)
     status = ("accepted", "candidate") if opts.include_candidates else ("accepted",)
     memories = store.memories(status=status)
     files = ex.render(store, memories, opts)
-    written = []
+    written, applied = [], []
     for f in files:
         p = opts.out_dir / f.rel_path
         p.parent.mkdir(parents=True, exist_ok=True)
         private_write_text(p, f.content)  # 0600: exports hold your conversations and what ctxport knows about you
         written.append(str(p))
-    if opts.apply:
-        if not ex.appliable:
-            info(f"[{target}] --apply is not available for this target (nothing is written outside {opts.out_dir}).")
+    if opts.apply and ex.appliable:
+        from .utils import BLOCK_BEGIN, BLOCK_END
         for f in files:
             if f.apply_path and f.managed:
-                from .utils import BLOCK_BEGIN, BLOCK_END
                 body = f.content.split("\n", 1)[1].rsplit(BLOCK_END, 1)[0] if f.content.startswith(BLOCK_BEGIN) else f.content
-                r = write_managed(Path(f.apply_path), body, target)
-                info(f"[{target}] updated {r['path']}" + (f" (backup {r['backup']})" if r.get("backup") else ""))
-    info(f"[{target}] {len(files)} file(s) → {opts.out_dir.resolve()}")
-    if not opts.apply or not ex.appliable:
-        info(f"[{target}] {ex.instructions}")
-    return written
+                applied.append(write_managed(Path(f.apply_path), body, target))
+            elif f.apply_path:  # a file ctxport owns entirely (e.g. a Cursor project rule)
+                ap = Path(f.apply_path)
+                ap.parent.mkdir(parents=True, exist_ok=True)
+                private_write_text(ap, f.content)
+                applied.append({"path": str(ap), "backup": None, "created": True})
+    return {"written": written, "applied": applied, "appliable": ex.appliable, "instructions": ex.instructions,
+            "files": files}
+
+
+def run_export(store: Store, target: str, opts: ExportOptions) -> list:
+    r = export_and_apply(store, target, opts)
+    if opts.apply and not r["appliable"]:
+        info(f"[{target}] --apply is not available for this target (nothing is written outside {opts.out_dir}).")
+    for a in r["applied"]:
+        info(f"[{target}] updated {a['path']}" + (f" (backup {a['backup']})" if a.get("backup") else ""))
+    info(f"[{target}] {len(r['written'])} file(s) → {opts.out_dir.resolve()}")
+    if not opts.apply or not r["appliable"]:
+        info(f"[{target}] {r['instructions']}")
+    return r["written"]
 
 
 def cmd_export(args) -> int:
@@ -532,6 +548,12 @@ def cmd_serve_mcp(args) -> int:
     return 0
 
 
+def cmd_app(args) -> int:
+    from .webapp import serve
+    serve(args.port, open_browser=not args.no_open)
+    return 0
+
+
 def cmd_serve_ingest(args) -> int:
     from . import ingest
     if args.reset_pairing:
@@ -720,6 +742,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(fn=cmd_mcp_config)
 
     sub.add_parser("serve-mcp", help="run the MCP server on stdio").set_defaults(fn=cmd_serve_mcp)
+
+    p = sub.add_parser("app", help="open the local app: review memories and import them into other AIs")
+    p.add_argument("--port", type=int, default=8766)
+    p.add_argument("--no-open", action="store_true", help="don't open the browser")
+    p.set_defaults(fn=cmd_app)
 
     p = sub.add_parser("serve-ingest", help="local receiver for the ctxport browser extension (127.0.0.1)")
     p.add_argument("--port", type=int, default=8765)

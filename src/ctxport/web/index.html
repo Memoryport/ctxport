@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="ctxport-app" content="1">
+<title>ctxport · 记忆迁移</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --fg: #15171c; --muted: #6b7280; --line: #e6e8ec; --soft: #f1f3f6;
+    --accent: #2f5bea; --accent-soft: #eaf0ff; --ok: #15803d; --ok-soft: #e8f6ee; --warn: #b45309; --warn-soft: #fdf3e3;
+    --err: #b91c1c; --radius: 12px; --shadow: 0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1115; --panel: #171a20; --fg: #eceef2; --muted: #9aa1ad; --line: #262a33; --soft: #1e222a;
+      --accent: #7c9bff; --accent-soft: #1d2640; --ok: #4ade80; --ok-soft: #13291c; --warn: #fbbf24; --warn-soft: #2a2213;
+      --err: #f87171; --shadow: none; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.55 -apple-system, "SF Pro Text", "Segoe UI", system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  header { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  .bar { max-width: 1080px; margin: 0 auto; padding: 14px 20px; display: flex; align-items: center; gap: 14px; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 16px; letter-spacing: .2px; }
+  .logo i { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); display: grid; place-items: center;
+    color: #fff; font-style: normal; font-size: 13px; font-weight: 700; }
+  .chips { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { font-size: 12px; color: var(--muted); background: var(--panel); border: 1px solid var(--line);
+    padding: 4px 10px; border-radius: 999px; display: flex; align-items: center; gap: 6px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--ok); } .dot.off { background: var(--err); }
+  main { max-width: 1080px; margin: 0 auto; padding: 22px 20px 60px; }
+  h2 { font-size: 15px; margin: 30px 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+  .hero { display: grid; grid-template-columns: 1.3fr 1fr; gap: 14px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+  .stats { padding: 16px 18px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .stat b { display: block; font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--muted); font-size: 12px; }
+  .plats { padding: 4px 18px 14px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .plats span { font-size: 12px; background: var(--soft); border-radius: 6px; padding: 3px 8px; color: var(--muted); }
+  .memcard { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+  .memcard .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .memcard p { margin: 0; color: var(--muted); font-size: 13px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .card { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-height: 132px; }
+  .card .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .card .name { font-weight: 600; }
+  .card .meta { color: var(--muted); font-size: 12px; word-break: break-all; flex: 1; }
+  .badge { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; background: var(--soft); color: var(--muted); }
+  .badge.ok { background: var(--ok-soft); color: var(--ok); }
+  .badge.warn { background: var(--warn-soft); color: var(--warn); }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  button { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--panel); color: var(--fg);
+    border-radius: 8px; padding: 7px 12px; cursor: pointer; transition: background .12s, border-color .12s; }
+  button:hover { background: var(--soft); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:hover { filter: brightness(1.06); }
+  button.ghost { border-color: transparent; color: var(--muted); }
+  button:disabled { opacity: .5; cursor: default; }
+  input[type=text] { font: inherit; font-size: 13px; width: 100%; border: 1px solid var(--line); border-radius: 8px;
+    padding: 7px 10px; background: var(--soft); color: var(--fg); }
+  .note { font-size: 12px; color: var(--muted); }
+  /* review drawer */
+  .drawer { position: fixed; inset: 0; background: rgba(0,0,0,.28); display: none; z-index: 20; }
+  .drawer.open { display: block; }
+  .sheet { position: absolute; right: 0; top: 0; bottom: 0; width: min(720px, 100%); background: var(--panel);
+    border-left: 1px solid var(--line); display: flex; flex-direction: column; }
+  .sheet header { position: static; background: var(--panel); }
+  .tabs { display: flex; gap: 4px; padding: 0 20px 10px; }
+  .tabs button.on { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .list { overflow: auto; padding: 0 20px 20px; flex: 1; }
+  .mem { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+  .mem .t { white-space: pre-wrap; word-break: break-word; max-height: 6.3em; overflow: hidden; }
+  .mem.long .t { cursor: pointer; -webkit-mask-image: linear-gradient(#000 65%, transparent);
+    mask-image: linear-gradient(#000 65%, transparent); }
+  .mem.open .t, .mem .t[contenteditable=true] { max-height: none; -webkit-mask-image: none; mask-image: none; cursor: text; }
+  .mem .t[contenteditable=true] { outline: 2px solid var(--accent); border-radius: 6px; padding: 4px 6px; }
+  .mem .m { color: var(--muted); font-size: 12px; margin-top: 3px; }
+  .mem .b { display: flex; gap: 6px; align-items: start; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--fg); color: var(--bg);
+    padding: 10px 16px; border-radius: 10px; font-size: 13px; max-width: min(620px, 92vw); opacity: 0;
+    transition: opacity .2s; pointer-events: none; z-index: 30; white-space: pre-wrap; }
+  .toast.show { opacity: .96; }
+  .toast.err { background: var(--err); color: #fff; }
+  .empty { color: var(--muted); padding: 30px 0; text-align: center; }
+  @media (max-width: 760px) { .hero { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(3, 1fr); } }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="logo"><i>&lt;&gt;</i>ctxport</div>
+    <div class="chips">
+      <div class="chip" id="chip-ext"><span class="dot"></span><span>浏览器扩展</span></div>
+      <div class="chip" id="chip-recv"><span class="dot"></span><span>本地接收服务</span></div>
+      <div class="chip" id="chip-ver">v–</div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="panel">
+      <div class="stats">
+        <div class="stat"><b id="s-convs">–</b><span>对话</span></div>
+        <div class="stat"><b id="s-msgs">–</b><span>消息</span></div>
+        <div class="stat"><b id="s-plats">–</b><span>来源平台</span></div>
+      </div>
+      <div class="plats" id="plats"></div>
+    </div>
+    <div class="panel memcard">
+      <div class="row"><b>记忆</b><span class="note">只有“已确认”的记忆会被导入</span></div>
+      <div class="row">
+        <span><b id="m-acc" style="font-size:20px">–</b> <span class="note">已确认</span></span>
+        <span><b id="m-cand" style="font-size:20px">–</b> <span class="note">待审核</span></span>
+      </div>
+      <div class="actions">
+        <button class="primary" data-open="candidate">审核候选记忆</button>
+        <button data-open="accepted">查看已确认</button>
+      </div>
+    </div>
+  </section>
+
+  <h2>编程 Agent</h2>
+  <p class="sub">把已确认的记忆写进它们的指令文件。只改 ctxport 自己那一块，你原来写的内容不动，第一次写入前自动备份。</p>
+  <div class="grid" id="agents"></div>
+
+  <h2>给 Agent 接上 MCP</h2>
+  <p class="sub">接上之后，这些工具可以随时搜索你在所有 AI 里的全部历史对话，而不只是一份摘要。</p>
+  <div class="grid" id="mcp"></div>
+
+  <h2>网页版 AI 的记忆</h2>
+  <p class="sub">通过 ctxport 浏览器扩展，在你已登录的网页里直接写入；没有装扩展时，会复制文本并打开对应页面让你粘贴。</p>
+  <div class="grid" id="web"></div>
+
+  <h2>桌面聊天应用</h2>
+  <p class="sub">生成导入文件、在访达里定位并打开应用。ctxport 不会直接改动这些应用的数据库。</p>
+  <div class="grid" id="apps"></div>
+</main>
+
+<div class="drawer" id="drawer">
+  <div class="sheet">
+    <header><div class="bar"><b id="dr-title">记忆</b>
+      <div class="chips"><input type="text" id="dr-search" placeholder="搜索记忆…" style="width:200px">
+      <button class="ghost" id="dr-close">关闭</button></div></div></header>
+    <div class="tabs">
+      <button data-tab="candidate">待审核</button>
+      <button data-tab="accepted">已确认</button>
+      <span style="flex:1"></span>
+      <button id="dr-all-acc" title="把下面列出的全部标为已确认">全部保留</button>
+      <button id="dr-all-rej" title="把下面列出的全部标为不要">全部不要</button>
+    </div>
+    <div class="list" id="dr-list"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// The launch token travels in the URL fragment (never sent to any server) and is kept for this tab only.
+(function takeToken() {
+  const m = location.hash.match(/t=([\w-]+)/);
+  if (m) { sessionStorage.setItem("ctxport-token", m[1]); history.replaceState(null, "", location.pathname); }
+})();
+const TOKEN = sessionStorage.getItem("ctxport-token") || "";
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: body === undefined ? "GET" : "POST",
+    headers: Object.assign({ "X-Ctxport-App": TOKEN }, body === undefined ? {} : { "Content-Type": "application/json" }),
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+let toastTimer;
+function toast(msg, err) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.className = "toast show" + (err ? " err" : "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (t.className = "toast"), err ? 6000 : 3200);
+}
+
+async function run(btn, fn) {
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "处理中…";
+  try { await fn(); } catch (e) { toast(e.message || String(e), true); }
+  finally { btn.disabled = false; btn.textContent = label; }
+}
+
+// ------------------------------------------------------------ browser extension bridge
+let extReady = false;
+const pending = new Map();
+window.addEventListener("message", (ev) => {
+  if (ev.source !== window || !ev.data || ev.data.source !== "ctxport-extension") return;
+  if (ev.data.type === "hello") { extReady = true; paintExt(); return; }
+  const p = pending.get(ev.data.id);
+  if (p) { pending.delete(ev.data.id); p(ev.data); }
+});
+function askExtension(action, target) {
+  return new Promise((resolve) => {
+    const id = Math.random().toString(36).slice(2);
+    pending.set(id, resolve);
+    window.postMessage({ source: "ctxport-app", id, action, target }, location.origin);
+    setTimeout(() => { if (pending.has(id)) { pending.delete(id); resolve({ ok: false, error: "扩展没有响应" }); } }, 120000);
+  });
+}
+function paintExt() {
+  const c = $("#chip-ext");
+  c.querySelector(".dot").className = "dot " + (extReady ? "ok" : "off");
+  c.lastElementChild.textContent = extReady ? "浏览器扩展已连接" : "未检测到浏览器扩展";
+}
+window.postMessage({ source: "ctxport-app", action: "hello" }, location.origin);
+setTimeout(paintExt, 1200);
+
+// ------------------------------------------------------------ rendering
+const fmt = (n) => Number(n || 0).toLocaleString("zh-CN");
+const PLATFORM = { "chatgpt": "ChatGPT", "claude-ai": "Claude.ai", "claude-code": "Claude Code", "codex": "Codex",
+  "gemini-cli": "Gemini CLI", "gemini-web": "Gemini", "antigravity": "Antigravity", "cherry-studio": "Cherry Studio",
+  "chatbox": "Chatbox", "openai-messages": "其他", "ctxport-jsonl": "ctxport" };
+
+async function loadOverview() {
+  const o = await api("/api/overview");
+  const plats = Object.entries(o.platforms || {});
+  $("#s-convs").textContent = fmt(plats.reduce((a, [, d]) => a + (d.conversations || 0), 0));
+  $("#s-msgs").textContent = fmt(plats.reduce((a, [, d]) => a + (d.messages || 0), 0));
+  $("#s-plats").textContent = plats.length;
+  $("#plats").innerHTML = plats.map(([p, d]) => `<span>${esc(PLATFORM[p] || p)} · ${fmt(d.conversations)}</span>`).join("");
+  $("#m-acc").textContent = fmt(o.memories.accepted);
+  $("#m-cand").textContent = fmt(o.memories.candidate);
+  $("#chip-ver").textContent = "v" + o.version;
+  const r = $("#chip-recv");
+  r.querySelector(".dot").className = "dot " + (o.receiver.running ? "ok" : "off");
+  r.lastElementChild.textContent = o.receiver.running ? "接收服务运行中" : "接收服务未运行";
+}
+
+function agentCard(a) {
+  const status = a.imported ? `<span class="badge ok">已导入</span>` : (a.exists === false && a.installed === false
+    ? `<span class="badge">未安装</span>` : `<span class="badge warn">未导入</span>`);
+  if (a.key === "cursor") {
+    return `<div class="panel card"><div class="top"><span class="name">Cursor</span><span class="badge">按项目</span></div>
+      <input type="text" placeholder="项目文件夹，例如 ~/code/my-app" data-project>
+      <div class="actions"><button class="primary" data-agent="cursor">写入项目规则</button>
+      <button data-copy="cursor">复制到 User Rules</button></div></div>`;
+  }
+  return `<div class="panel card"><div class="top"><span class="name">${esc(a.label)}</span>${status}</div>
+    <div class="meta">${esc(a.path)}</div>
+    <div class="actions"><button class="primary" data-agent="${esc(a.key)}">${a.imported ? "更新" : "一键导入"}</button></div></div>`;
+}
+
+function mcpCard(m) {
+  const status = m.connected ? `<span class="badge ok">已连接</span>` : (m.installed ? `<span class="badge warn">未连接</span>`
+    : `<span class="badge">未检测到</span>`);
+  return `<div class="panel card"><div class="top"><span class="name">${esc(m.label)}</span>${status}</div>
+    <div class="meta">${esc(m.error ? "配置文件读不了：" + m.error : m.hint)}</div>
+    <div class="actions">${m.connected
+      ? `<button data-mcp-off="${esc(m.key)}">断开</button><button data-mcp="${esc(m.key)}">重新连接</button>`
+      : `<button class="primary" data-mcp="${esc(m.key)}">一键连接</button>`}</div></div>`;
+}
+
+function webCard(w) {
+  return `<div class="panel card"><div class="top"><span class="name">${esc(w.label)}</span><span class="badge">${esc(w.where)}</span></div>
+    <div class="meta">${w.limit ? `限 ${w.limit} 字，会自动挑最重要的记忆` : "写入全部已确认记忆"}</div>
+    <div class="actions"><button class="primary" data-web="${esc(w.key)}">一键写入</button>
+    <button data-copy-open="${esc(w.key)}" data-url="${esc(w.url)}">复制并打开网页</button></div></div>`;
+}
+
+function appCard(a) {
+  return `<div class="panel card"><div class="top"><span class="name">${esc(a.label)}</span>
+    ${a.installed ? `<span class="badge ok">已安装</span>` : `<span class="badge">未检测到</span>`}</div>
+    <div class="meta">${a.key === "chatbox" ? "生成可导入的备份文件和系统提示词" : "生成助手提示词，可新建一个“我”助手粘贴"}</div>
+    <div class="actions"><button class="primary" data-app="${esc(a.key)}">生成并打开</button>
+    ${a.key === "cherry-studio" ? `<button data-copy="cherry-studio">复制提示词</button>` : ""}</div></div>`;
+}
+
+async function loadTargets() {
+  const t = await api("/api/targets");
+  $("#agents").innerHTML = t.agents.map(agentCard).join("");
+  $("#mcp").innerHTML = t.mcp.map(mcpCard).join("");
+  $("#web").innerHTML = t.web.map(webCard).join("");
+  $("#apps").innerHTML = t.apps.map(appCard).join("");
+}
+
+async function copyText(target) {
+  const { text } = await api("/api/text?target=" + encodeURIComponent(target));
+  await navigator.clipboard.writeText(text);
+  return text;
+}
+
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest("button");
+  if (!b) return;
+  const d = b.dataset;
+  if (d.agent) run(b, async () => {
+    const project = d.agent === "cursor" ? (b.closest(".card").querySelector("[data-project]").value || "").trim() : undefined;
+    const r = await api("/api/agent/apply", { key: d.agent, project });
+    const a = (r.applied || [])[0] || {};
+    toast(`已写入 ${a.path || ""}${a.backup ? "\n原文件备份：" + a.backup : ""}`);
+    loadTargets();
+  });
+  else if (d.mcp) run(b, async () => {
+    const r = await api("/api/mcp/connect", { key: d.mcp });
+    toast(`已连接：${r.path}${r.backup ? "\n原配置备份：" + r.backup : ""}`);
+    loadTargets();
+  });
+  else if (d.mcpOff) run(b, async () => { await api("/api/mcp/disconnect", { key: d.mcpOff }); toast("已断开"); loadTargets(); });
+  else if (d.web) run(b, async () => {
+    if (!extReady) {
+      await copyText(d.web);
+      const url = b.closest(".card").querySelector("[data-url]").dataset.url;
+      await api("/api/open-url", { url });
+      toast("没有检测到浏览器扩展：已复制文本并打开网页，请粘贴后保存。");
+      return;
+    }
+    const r = await askExtension("push-memory", d.web);
+    if (!r.ok) throw new Error(r.error || "写入失败");
+    toast(r.message || "已写入");
+  });
+  else if (d.copyOpen) run(b, async () => {
+    await copyText(d.copyOpen);
+    await api("/api/open-url", { url: d.url });
+    toast("已复制，网页已打开，粘贴后保存即可。");
+  });
+  else if (d.copy) run(b, async () => { await copyText(d.copy); toast("已复制到剪贴板"); });
+  else if (d.app) run(b, async () => {
+    const r = await api("/api/app/export", { key: d.app });
+    toast(`已生成：${(r.files || []).join("\n")}\n${r.instructions || ""}`);
+  });
+  else if (d.open) openDrawer(d.open);
+  else if (d.tab) loadDrawer(d.tab);
+});
+
+// ------------------------------------------------------------ memory review
+let drTab = "candidate", drRows = [];
+function openDrawer(tab) { $("#drawer").classList.add("open"); loadDrawer(tab); }
+$("#dr-close").onclick = () => { $("#drawer").classList.remove("open"); loadOverview(); };
+$("#drawer").onclick = (e) => { if (e.target.id === "drawer") $("#dr-close").onclick(); };
+$("#dr-search").oninput = () => paintDrawer();
+async function loadDrawer(tab) {
+  drTab = tab;
+  document.querySelectorAll(".tabs [data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+  $("#dr-title").textContent = tab === "candidate" ? "待审核的记忆" : "已确认的记忆";
+  $("#dr-list").innerHTML = `<div class="empty">加载中…</div>`;
+  drRows = (await api("/api/memories?status=" + tab)).memories;
+  paintDrawer();
+}
+function visibleRows() {
+  const q = $("#dr-search").value.trim().toLowerCase();
+  return q ? drRows.filter((m) => m.text.toLowerCase().includes(q)) : drRows;
+}
+function paintDrawer() {
+  const rows = visibleRows().slice(0, 400);
+  $("#dr-list").innerHTML = rows.length ? rows.map((m) => `<div class="mem" data-id="${esc(m.id)}">
+      <div><div class="t">${esc(m.text)}</div>
+      <div class="m">${esc(m.category)} · ${esc(PLATFORM[m.platform] || m.platform)}${m.seen > 1 ? ` · 出现 ${m.seen} 次` : ""}${m.scope !== "global" ? " · " + esc(m.scope) : ""}</div></div>
+      <div class="b">${drTab === "candidate" ? `<button data-keep>保留</button>` : ""}
+      <button data-edit>改</button><button class="ghost" data-drop>不要</button></div></div>`).join("")
+    : `<div class="empty">没有记忆</div>`;
+  document.querySelectorAll("#dr-list .mem").forEach((r) => {
+    const t = r.querySelector(".t");
+    if (t.scrollHeight > t.clientHeight + 2) r.classList.add("long");
+  });
+  if (visibleRows().length > 400) $("#dr-list").insertAdjacentHTML("beforeend", `<div class="empty">只显示前 400 条，用搜索缩小范围</div>`);
+}
+$("#dr-list").addEventListener("click", async (ev) => {
+  const row = ev.target.closest(".mem");
+  if (!row) return;
+  const id = row.dataset.id;
+  const t = row.querySelector(".t");
+  if (ev.target === t && !t.isContentEditable) { if (row.classList.contains("long")) row.classList.toggle("open"); return; }
+  try {
+    if (ev.target.matches("[data-keep]")) { await api("/api/memories/update", { id, status: "accepted" }); row.remove(); drRows = drRows.filter((m) => m.id !== id); }
+    else if (ev.target.matches("[data-drop]")) { await api("/api/memories/update", { id, status: "rejected" }); row.remove(); drRows = drRows.filter((m) => m.id !== id); }
+    else if (ev.target.matches("[data-edit]")) {
+      if (t.isContentEditable) {
+        await api("/api/memories/update", { id, text: t.innerText.trim(), status: "accepted" });
+        t.contentEditable = "false"; ev.target.textContent = "改"; toast("已保存并确认");
+      } else { t.contentEditable = "true"; t.focus(); ev.target.textContent = "存"; }
+    }
+  } catch (e) { toast(e.message, true); }
+});
+async function bulk(status) {
+  const ids = visibleRows().map((m) => m.id);
+  if (!ids.length) return;
+  if (!confirm(`把列出的 ${ids.length} 条记忆全部标为“${status === "accepted" ? "已确认" : "不要"}”？`)) return;
+  await api("/api/memories/update", { ids, status });
+  toast(`已处理 ${ids.length} 条`);
+  loadDrawer(drTab);
+}
+$("#dr-all-acc").onclick = () => bulk("accepted").catch((e) => toast(e.message, true));
+$("#dr-all-rej").onclick = () => bulk("rejected").catch((e) => toast(e.message, true));
+
+// ------------------------------------------------------------ start
+(async () => {
+  if (!TOKEN) { toast("缺少访问令牌：请用 `ctxport app` 打开这个页面", true); return; }
+  try { await Promise.all([loadOverview(), loadTargets()]); } catch (e) { toast(e.message, true); }
+})();
+</script>
+</body>
+</html>

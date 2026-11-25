@@ -105,6 +105,27 @@ ctxport search "vector database"     # FTS5 for 3+ characters, falls back to LIK
 
 By default ctxport **only writes previews** to `./ctxport-out/`. Only `--apply` writes to the real locations, and then it only changes the block between `<!-- ctxport:begin … -->` and `<!-- ctxport:end -->`. The original file is backed up as `*.ctxport.bak` before the first write.
 
+## One-click import into other AIs: `ctxport app`
+
+```bash
+ctxport app
+```
+
+Opens a page served only on this computer (`127.0.0.1`, a fresh random access token per launch):
+
+* **Memories** — review candidates (keep / drop / rewrite, in bulk too); only accepted memories are imported.
+* **Coding agents** — write into Claude Code, Codex, Gemini CLI and Antigravity instruction files (managed block only,
+  original backed up once as `*.ctxport.bak`); Cursor gets a project rule `.cursor/rules/ctxport.mdc` or text for User Rules.
+* **Connect MCP** — register ctxport in Claude Desktop, Claude Code, Codex, Cursor, Gemini CLI and Antigravity; only the
+  `ctxport` entry is added or removed, unreadable config files are never overwritten.
+* **Web AI memory** — with the [browser extension](extension/README.md): ChatGPT custom instructions ("about you"; your
+  own text is kept, only the part after `[ctxport]` is replaced, within 1,500 characters), Claude.ai memory import and
+  Gemini saved info (form filling, experimental). Without the extension: copy the text and open the page.
+* **Desktop chat apps** — Chatbox import file and Cherry Studio assistant prompt, revealed in the file manager.
+
+The text written into web accounts is always fetched by the extension from your local ctxport (accepted, masked
+memories only); a web page can never choose what gets written.
+
 ## Summarize your background in one command
 
 Starting fresh with a new assistant? `ctxport profile` turns your memories and recent chat topics into one short
