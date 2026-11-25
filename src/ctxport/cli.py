@@ -657,6 +657,46 @@ def cmd_distill(args) -> int:
     return 0
 
 
+def cmd_forget_web(args) -> int:
+    from . import ingest
+    with open_store(args) as s:
+        d = ingest.web_data(s, args.platform)
+        if not (d["conversations"] or d["files"]):
+            print(f"nothing collected by the browser extension for {args.platform}")
+        else:
+            print(f"{args.platform}: {d['conversations']} conversations ({d['messages']} messages) synced by the "
+                  f"browser extension, {d['files']} inbox files ({_fmt_bytes(d['bytes'])})")
+            print("Kept: conversations from official export zips, and every accepted or rejected memory.")
+            if not args.keep_web_sync:
+                print(f"The extension's {args.platform} sync is turned off too (`ctxport web-sync {args.platform} on`"
+                      " turns it back on).")
+            if not args.yes:
+                if not sys.stdin.isatty():
+                    print("Not deleted: add --yes to confirm.", file=sys.stderr)
+                    return 1
+                if input("Delete them? This cannot be undone. [y/N] ").strip().lower() not in ("y", "yes"):
+                    print("cancelled")
+                    return 1
+        r = ingest.forget_web(s, args.platform, keep_web_sync=args.keep_web_sync)
+        if r["conversations"] and not args.no_compact:
+            s.compact()
+    print(f"deleted {r['conversations']} conversations and {r['files']} inbox files ({_fmt_bytes(r['bytes'])})"
+          + ("" if args.keep_web_sync else f"; {args.platform} web sync is off"))
+    if args.platform in ("chatgpt", "claude-ai"):
+        print("Import the official export instead: save the zip in your Downloads folder and run `ctxport sync`.")
+    return 0
+
+
+def cmd_web_sync(args) -> int:
+    from . import ingest
+    if args.platform and args.state:
+        ingest.set_web_sync(args.platform, args.state == "on")
+    off = ingest.web_sync_off()
+    for p in ingest.PLATFORMS:
+        print(f"{p:12} {'off' if p in off else 'on'}")
+    return 0
+
+
 def cmd_app(args) -> int:
     from .webapp import serve
     serve(args.port, open_browser=not args.no_open)
@@ -842,6 +882,19 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("compact", help="make the database smaller: trim tool output, merge the index, VACUUM")
     p.add_argument("--keep-tools", action="store_true", help="don't trim stored tool output, only reclaim space")
     p.set_defaults(fn=cmd_compact)
+
+    p = sub.add_parser("forget-web", help="delete what the browser extension collected for one site "
+                                          "(and stop syncing it); official export imports are kept")
+    p.add_argument("platform", choices=("chatgpt", "claude-ai", "gemini-web"))
+    p.add_argument("--yes", action="store_true", help="don't ask for confirmation")
+    p.add_argument("--keep-web-sync", action="store_true", help="delete, but let the extension keep syncing")
+    p.add_argument("--no-compact", action="store_true", help="skip shrinking the database file afterwards")
+    p.set_defaults(fn=cmd_forget_web)
+
+    p = sub.add_parser("web-sync", help="show, or turn on/off, the browser extension's sync per site")
+    p.add_argument("platform", nargs="?", choices=("chatgpt", "claude-ai", "gemini-web"))
+    p.add_argument("state", nargs="?", choices=("on", "off"))
+    p.set_defaults(fn=cmd_web_sync)
 
     p = sub.add_parser("stats", help="per-platform statistics")
     p.add_argument("--json", action="store_true")

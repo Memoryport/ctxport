@@ -18,6 +18,7 @@ from ctxport import pipeline
 from ctxport.chromium.indexeddb import ChromiumIndexedDB, read_local_storage
 from ctxport.chromium.leveldb import read_db, snappy_decompress
 from ctxport.chromium.v8 import deserialize
+from ctxport.models import MemoryItem
 from ctxport.store import Store
 
 
@@ -392,4 +393,50 @@ def test_official_exports_in_downloads_are_imported(tmp_path, monkeypatch):
     assert reps["claude-ai"].units == 1 and s.get_conversation("claude-ai:ca-1") is not None
     again = {r.platform: r for r in pipeline.sync(s, only=["chatgpt", "claude-ai"])}
     assert again["chatgpt"].skipped == 1 and again["claude-ai"].skipped == 1
+    s.close()
+
+
+def test_forget_web_deletes_extension_data_and_stops_sync(tmp_path, server, monkeypatch):
+    import zipfile as _zf
+    from ctxport import ingest
+    port = server
+    token = _pair(port)
+    db = tmp_path / "ctxport_home" / "ctxport.db"
+    good = {"uuid": "ok-1", "name": "t", "updated_at": "2026-01-01T00:00:00Z",
+            "chat_messages": [{"uuid": "m1", "sender": "human", "content": [{"type": "text", "text": "zebra lamp"}]}]}
+    code, _ = _post(port, "/ingest", {"platform": "claude-ai", "conversations": [good],
+                                      "memories": [{"content": "Rides a bike"}]}, token=token)
+    assert code == 200
+    dl = tmp_path / "Downloads"
+    dl.mkdir()
+    monkeypatch.setenv("CTXPORT_DOWNLOADS", str(dl))
+    with _zf.ZipFile(fx.claude_ai_export(tmp_path)) as z, _zf.ZipFile(dl / "data-2026.zip", "w") as out:
+        for n in z.namelist():
+            out.writestr(n, z.read(n))
+        out.writestr("users.json", "[]")
+    s = Store(db)
+    pipeline.sync(s, only=["claude-ai"])
+    s.upsert_memory(MemoryItem(text="cand from web", status="candidate", source_ref="claude-ai:ok-1"))
+    s.commit()
+    before = ingest.web_data(s, "claude-ai")
+    assert before["conversations"] == 1 and before["files"] >= 2 and before["web_sync"]
+    r = ingest.forget_web(s, "claude-ai")
+    assert r["conversations"] == 1
+    assert s.get_conversation("claude-ai:ok-1") is None
+    assert s.get_conversation("claude-ai:ca-1") is not None          # official export kept
+    assert not s.search("zebra lamp")                                  # search index cleaned
+    texts = {m.text for m in s.memories(status=None)}
+    assert "Rides a bike" in texts and "cand from web" not in texts    # accepted kept, its candidate gone
+    assert not list((tmp_path / "ctxport_home" / "inbox" / "claude-ai").iterdir())
+    assert ingest.web_data(s, "claude-ai")["web_sync"] is False
+    # the extension is refused from now on, so it doesn't collect everything again
+    code, body = _post(port, "/known?platform=claude-ai", token=token)
+    assert code == 410 and body["web_sync_off"]
+    assert _post(port, "/ingest", {"platform": "claude-ai", "conversations": [good]}, token=token)[0] == 410
+    assert _post(port, "/known?platform=chatgpt", token=token)[0] == 200   # other sites unaffected
+    # the next sync re-imports the official export (its import record was forgotten)
+    rep = {x.platform: x for x in pipeline.sync(s, only=["claude-ai"])}
+    assert rep["claude-ai"].units == 1 and rep["claude-ai"].skipped == 0
+    ingest.set_web_sync("claude-ai", True)
+    assert _post(port, "/known?platform=claude-ai", token=token) == (200, {"known": {}})
     s.close()

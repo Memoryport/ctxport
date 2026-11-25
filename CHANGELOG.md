@@ -34,6 +34,12 @@ All notable changes to ctxport are listed here. The format follows
   the folder, `off` to disable); conversations already synced by the extension are deduplicated by id.
 - Extension pause switch: stops a running sync at the next checkpoint (also during a long rate-limit wait; saved
   conversations are kept), and skips auto-sync and scheduled syncs while paused. Turning it back on resumes.
+- `ctxport forget-web PLATFORM` and a delete button in `ctxport app`: delete what the browser extension collected
+  for one site (conversations, messages, search index entries, unreviewed candidates, inbox files; then the
+  database is compacted) and turn that site's web sync off, so the receiver refuses the extension (HTTP 410) instead
+  of letting it read everything again. Official export imports and accepted or rejected memories are kept; the
+  official export's import record is forgotten so the next `ctxport sync` restores any conversation it had skipped.
+  `ctxport web-sync [PLATFORM on|off]` shows or changes it.
 
 ### Changed
 - Re-syncing a conversation rewrites only the messages that changed. The browser extension sends a whole

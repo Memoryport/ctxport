@@ -85,6 +85,12 @@ ctxport serve-ingest --pair                # once: print a pairing code, type it
 ctxport sync --extract                     # import local sources + what the extension sent, incrementally
 ```
 
+With many ChatGPT conversations, syncing one by one is slow (ChatGPT rate-limits reads). Request the official
+export with one click in the extension popup or `ctxport app`; a downloaded export zip left in the Downloads folder is
+imported by `ctxport sync`. Once you have it, `ctxport forget-web chatgpt` (or the delete button in `ctxport app`)
+deletes what the extension collected for that site and turns its web sync off, so the extension doesn't read it again;
+conversations from official exports and your reviewed memories are kept. `ctxport web-sync chatgpt on` turns it back on.
+
 ctxport never decrypts browser cookies or reads saved passwords. Web data can only be read by the extension in your browser, on pages where you're logged in.
 
 ## Quick start

@@ -57,6 +57,8 @@
   button:hover { background: var(--soft); }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
   button.primary:hover { filter: brightness(1.06); }
+  button.danger { color: var(--err); border-color: color-mix(in srgb, var(--err) 45%, var(--line)); }
+  button.danger:hover { background: color-mix(in srgb, var(--err) 8%, var(--panel)); }
   button.ghost { border-color: transparent; color: var(--muted); }
   button:disabled { opacity: .5; cursor: default; }
   input[type=text] { font: inherit; font-size: 13px; width: 100%; border: 1px solid var(--line); border-radius: 8px;
@@ -166,6 +168,10 @@
       <div class="meta">下载好官方导出 zip 后点这里，或下次同步时会自动导入。</div>
       <div class="actions"><button id="x-import">检查下载文件夹并导入</button></div></div>
   </div>
+
+  <h2>网页同步的记录</h2>
+  <p class="sub">浏览器扩展一条条读回来的对话。改用官方导出后可以在这里一键删除，同时停止该网站的网页同步，免得扩展又读回来。官方导出包导入的对话、你已确认或拒绝的记忆都会保留。</p>
+  <div class="grid" id="webdata"></div>
 
   <h2>编程 Agent</h2>
   <p class="sub">把已确认的记忆写进它们的指令文件。只改 ctxport 自己那一块，你原来写的内容不动，第一次写入前自动备份。</p>
@@ -515,10 +521,41 @@ $("#x-import").onclick = () => run($("#x-import"), async () => {
   loadOverview();
 });
 
+const SITE_NAMES = { chatgpt: "ChatGPT", "claude-ai": "Claude.ai", "gemini-web": "Gemini 网页版" };
+const fmtBytes = (n) => n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.round(n / 1024) + " KB";
+async function loadWebData() {
+  const { sites } = await api("/api/web-data");
+  const box = $("#webdata");
+  box.innerHTML = sites.map((w) => `
+    <div class="panel card"><div class="top"><span class="name">${esc(SITE_NAMES[w.platform] || w.platform)}</span>
+      <span class="badge">网页同步${w.web_sync ? "开" : "已关闭"}</span></div>
+      <div class="meta">${w.conversations || w.files
+        ? `${fmt(w.conversations)} 个对话 · ${fmt(w.messages)} 条消息 · 原始文件 ${fmtBytes(w.bytes)}`
+        : "没有网页同步的记录"}</div>
+      <div class="actions">
+        ${w.conversations || w.files ? `<button class="danger" data-forget="${esc(w.platform)}">删除并停止同步</button>` : ""}
+        <button data-sync="${esc(w.platform)}" data-on="${w.web_sync ? "" : "1"}">${w.web_sync ? "停止网页同步" : "恢复网页同步"}</button>
+      </div></div>`).join("");
+  box.querySelectorAll("[data-forget]").forEach((b) => b.onclick = () => run(b, async () => {
+    const w = sites.find((x) => x.platform === b.dataset.forget);
+    const name = SITE_NAMES[w.platform] || w.platform;
+    if (!confirm(`删除 ${name} 网页同步的 ${w.conversations} 个对话（${w.messages} 条消息）和 ${fmtBytes(w.bytes)} 原始文件？\n\n` +
+      `删除后无法恢复，并且会停止 ${name} 的网页同步。官方导出导入的对话和已确认的记忆会保留。`)) return;
+    const r = await api("/api/web-data/forget", { platform: w.platform, confirm: true });
+    toast(`已删除 ${fmt(r.conversations)} 个对话、${fmt(r.files)} 个文件`);
+    await Promise.all([loadWebData(), loadOverview()]);
+  }));
+  box.querySelectorAll("[data-sync]").forEach((b) => b.onclick = () => run(b, async () => {
+    await api("/api/web-data/sync", { platform: b.dataset.sync, on: !!b.dataset.on });
+    toast(b.dataset.on ? "已恢复网页同步" : "已停止网页同步，扩展不会再读这个网站");
+    await loadWebData();
+  }));
+}
+
 // ------------------------------------------------------------ start
 (async () => {
   if (!TOKEN) { toast("缺少访问令牌：请用 `ctxport app` 打开这个页面", true); return; }
-  try { await Promise.all([loadOverview(), loadTargets(), loadAgents(), loadDistill()]); } catch (e) { toast(e.message, true); }
+  try { await Promise.all([loadOverview(), loadTargets(), loadAgents(), loadDistill(), loadWebData()]); } catch (e) { toast(e.message, true); }
 })();
 </script>
 </body>

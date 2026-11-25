@@ -80,7 +80,7 @@ ctxport serve-ingest --pair                # 一次：打印配对码，填入�
 ctxport sync --extract                     # 本地来源 + 扩展收到的数据，全部增量入库
 ```
 
-ChatGPT 对话很多时，可在扩展弹窗或 `ctxport app` 里一键发起官方导出（下载链接发到邮箱），下载的 zip 放在“下载”文件夹会被 `ctxport sync` 自动导入。
+ChatGPT 对话很多时，可在扩展弹窗或 `ctxport app` 里一键发起官方导出（下载链接发到邮箱），下载的 zip 放在“下载”文件夹会被 `ctxport sync` 自动导入。拿到官方导出后，`ctxport forget-web chatgpt`（或 `ctxport app` 里“网页同步的记录”的删除按钮）会删除扩展为该网站收集的全部对话和原始文件，并关闭该网站的网页同步，免得扩展又读回来；官方导出导入的对话、你已确认或拒绝的记忆都会保留。`ctxport web-sync chatgpt on` 可重新打开。
 
 ctxport 不会解密浏览器 Cookie 或读取保存的密码；网页数据只能由你浏览器里的扩展在你登录的页面里读取。
 

@@ -240,3 +240,14 @@ def test_app_import_downloads(app, tmp_path, monkeypatch):
     monkeypatch.setenv("CTXPORT_DOWNLOADS", str(dl))
     code, r = call(app, "/api/import-downloads", {})
     assert code == 200 and r["chatgpt"]["zips"] == 0 and r["claude-ai"]["zips"] == 0
+
+
+def test_app_web_data(app, fake_home):
+    sites = {w["platform"]: w for w in call(app, "/api/web-data")[1]["sites"]}
+    assert set(sites) == {"chatgpt", "claude-ai", "gemini-web"} and sites["chatgpt"]["web_sync"]
+    assert call(app, "/api/web-data/forget", {"platform": "chatgpt"})[0] == 400       # needs confirmation
+    assert call(app, "/api/web-data/forget", {"platform": "evil", "confirm": True})[0] == 400
+    code, r = call(app, "/api/web-data/forget", {"platform": "chatgpt", "confirm": True})
+    assert code == 200 and r["conversations"] == 0 and r["web_sync"] is False
+    sites = {w["platform"]: w for w in call(app, "/api/web-data/sync", {"platform": "chatgpt", "on": True})[1]["sites"]}
+    assert sites["chatgpt"]["web_sync"] is True

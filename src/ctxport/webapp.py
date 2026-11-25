@@ -268,6 +268,22 @@ def import_downloads() -> dict:
     return out
 
 
+def web_data_all() -> dict:
+    """Per site: what the browser extension collected, and whether its sync is on."""
+    from . import ingest
+    with Store() as s:
+        return {"sites": [ingest.web_data(s, p) for p in ingest.PLATFORMS]}
+
+
+def web_forget(platform: str, keep_web_sync: bool = False) -> dict:
+    from . import ingest
+    with Store() as s:
+        r = ingest.forget_web(s, platform, keep_web_sync=keep_web_sync)
+        if r["conversations"]:
+            s.compact()
+    return r
+
+
 def distill_options() -> dict:
     from .distill import agent_commands
     return {"agents": sorted(agent_commands())}
@@ -453,6 +469,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 return self._json(200, targets())
             if u.path == "/api/llm":
                 return self._json(200, llm_settings())
+            if u.path == "/api/web-data":
+                return self._json(200, web_data_all())
             if u.path == "/api/distill/status":
                 return self._json(200, distill_status())
             if u.path == "/api/distill/options":
@@ -497,6 +515,14 @@ class AppHandler(BaseHTTPRequestHandler):
                 if payload.get("confirm") is not True:
                     return self._json(400, {"error": "confirmation required"})
                 return self._json(200, distill_agent(str(payload.get("agent"))))
+            if path == "/api/web-data/forget":
+                if payload.get("confirm") is not True:
+                    return self._json(400, {"error": "confirmation required"})
+                return self._json(200, web_forget(str(payload.get("platform")), bool(payload.get("keep_web_sync"))))
+            if path == "/api/web-data/sync":
+                from . import ingest
+                ingest.set_web_sync(str(payload.get("platform")), bool(payload.get("on")))
+                return self._json(200, web_data_all())
             if path == "/api/import-downloads":
                 return self._json(200, import_downloads())
             if path == "/api/distill/folder":

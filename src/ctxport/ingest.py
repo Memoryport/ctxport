@@ -38,6 +38,8 @@ MAX_BODY = 200 * 1024 * 1024
 _EXT_ORIGIN = re.compile(r"^(chrome-extension|extension|moz-extension|safari-web-extension)://[a-z0-9.-]+$", re.I)
 _LOCK = threading.Lock()
 TOKEN_HEADER = "X-Ctxport-Token"
+_SYNC_OFF = {"error": "网页同步已在 ctxport 中关闭 / web sync for this site is turned off in ctxport "
+                      "(turn it back on: ctxport web-sync PLATFORM on)", "web_sync_off": True}
 PAIR_CODE_TTL = 600          # seconds
 PAIR_CODE_ATTEMPTS = 5
 _CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I/L
@@ -303,6 +305,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._deny()
         m = re.match(r"^/known\?platform=([\w-]+)$", self.path)
         if m:
+            if m.group(1) in web_sync_off():
+                return self._send(410, _SYNC_OFF)
             return self._send(200, {"known": self.state.known(m.group(1))})
         # The extension fetches the text to write into a site's memory from here (never from a web page),
         # so only the user's own accepted, masked memories can ever be written into their accounts.
@@ -334,11 +338,88 @@ class Handler(BaseHTTPRequestHandler):
         payload = self._read_json_body()
         if payload is None:
             return None
+        if str(payload.get("platform")) in web_sync_off():
+            return self._send(410, _SYNC_OFF)
         try:
             result = self.state.save(str(payload.get("platform")), payload)
         except Exception as e:
             return self._send(400, {"error": f"{type(e).__name__}: {e}"})
         return self._send(200, {"ok": True, **result})
+
+
+# ------------------------------------------------------------ deleting what the extension collected
+
+def _web_sync_file() -> Path:
+    return default_home() / "web-sync-off.json"
+
+
+def web_sync_off() -> set:
+    """Platforms whose browser-extension sync the user turned off (the receiver refuses them)."""
+    try:
+        data = json.loads(_web_sync_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    return {p for p in data if p in PLATFORMS} if isinstance(data, list) else set()
+
+
+def set_web_sync(platform: str, on: bool) -> None:
+    if platform not in PLATFORMS:
+        raise ValueError(f"unknown platform {platform!r}; one of {', '.join(PLATFORMS)}")
+    off = web_sync_off()
+    off = off - {platform} if on else off | {platform}
+    ensure_private_dir(default_home())
+    private_write_text(_web_sync_file(), json.dumps(sorted(off)))
+
+
+def _inbox_prefix(platform: str) -> str:
+    from .adapters import get_importer
+    return get_importer(platform).unit_key(inbox_dir(platform)) + os.sep
+
+
+def web_data(store: Store, platform: str) -> dict:
+    """What the browser extension collected for one platform: stored conversations and inbox files."""
+    if platform not in PLATFORMS:
+        raise ValueError(f"unknown platform {platform!r}; one of {', '.join(PLATFORMS)}")
+    prefix = _inbox_prefix(platform)
+    row = store.db.execute(
+        "SELECT COUNT(*), COALESCE(SUM(message_count),0) FROM conversations WHERE platform=? AND substr(source_key,1,?)=?",
+        (platform, len(prefix), prefix)).fetchone()
+    files = [p for p in inbox_dir(platform).glob("*") if p.is_file()] if inbox_dir(platform).is_dir() else []
+    return {"platform": platform, "conversations": row[0], "messages": row[1], "files": len(files),
+            "bytes": sum(p.stat().st_size for p in files), "web_sync": platform not in web_sync_off()}
+
+
+def forget_web(store: Store, platform: str, keep_web_sync: bool = False) -> dict:
+    """Delete everything the browser extension collected for `platform`: its conversations in the store (with
+    their messages, search index entries and unreviewed memory candidates) and its inbox files. Conversations
+    imported from an official export zip and every accepted or rejected memory are kept. Unless
+    `keep_web_sync`, the extension's sync of that platform is also turned off, so it doesn't collect them again."""
+    before = web_data(store, platform)
+    prefix = _inbox_prefix(platform)
+    if not keep_web_sync:  # first, so a sync running right now is refused from here on
+        set_web_sync(platform, False)
+    with _LOCK:
+        ids = [r[0] for r in store.db.execute(
+            "SELECT id FROM conversations WHERE platform=? AND substr(source_key,1,?)=?",
+            (platform, len(prefix), prefix))]
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            marks = ",".join("?" * len(chunk))
+            store.db.execute(f"DELETE FROM messages WHERE conversation_id IN ({marks})", chunk)
+            store.db.execute(f"DELETE FROM extracted WHERE conversation_id IN ({marks})", chunk)
+            store.db.execute(f"DELETE FROM memories WHERE status='candidate' AND source_ref IN ({marks})", chunk)
+            store.db.execute(f"DELETE FROM conversations WHERE id IN ({marks})", chunk)
+        # Forget every import record of the platform: the inbox ones, and an official export imported earlier
+        # (it skipped conversations the extension had newer copies of; the next `ctxport sync` brings them back).
+        store.db.execute("DELETE FROM sources WHERE platform=?", (platform,))
+        store.commit()
+        d = inbox_dir(platform)
+        if d.is_dir():
+            for p in d.iterdir():
+                if p.is_file():
+                    p.unlink()
+    return {"platform": platform, "conversations": len(ids), "messages": before["messages"],
+            "files": before["files"], "bytes": before["bytes"], "web_sync": keep_web_sync}
 
 
 def compress_inbox(store: Optional[Store] = None) -> tuple:
