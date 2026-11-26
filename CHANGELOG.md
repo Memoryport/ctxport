@@ -67,6 +67,8 @@ All notable changes to ctxport are listed here. The format follows
   fresh import about 10% faster. A power cut can lose the last commits but cannot corrupt the database.
 
 ### Fixed
+- ChatGPT official exports in the 2026 layout (`index.html` and `export_manifest.json` instead of `chat.html`) are
+  found in the Downloads folder again; before, `ctxport sync` skipped them silently.
 - E-mail addresses, WeChat / QQ ids and licence plates are no longer turned into memories (they were exported to
   every assistant and shown by `profile`). Conversation archives keep them, as before.
 - Masking also covers `密码 hunter22` (a space alone before the value), passport numbers after "护照号" / "passport no.",

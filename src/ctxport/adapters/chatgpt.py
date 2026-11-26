@@ -15,6 +15,8 @@ from ._render import render_memories_plain
 from .base import ExportOptions, Exporter, Importer, downloads_dir, export_zips, inbox_units, is_account_file, is_inbox, register
 
 CONV_FILE = r"(^|/)conversations(-\d+)?\.json$"
+# Files only a ChatGPT export has: chat.html in older exports; newer ones (2026) ship index.html with export_manifest.json.
+EXPORT_MARKERS = {"chat.html", "export_manifest.json", "message_feedback.json"}
 
 
 def _part_text(p) -> tuple:
@@ -186,7 +188,8 @@ class ChatGPTImporter(Importer):
         if Path(root).is_dir() and is_inbox(Path(root) / "x"):
             return inbox_units(root)
         if Path(root).is_dir() and Path(root) == downloads_dir():
-            return export_zips(root, lambda names: "chat.html" in names and any(re.fullmatch(r"conversations(-\d+)?\.json", n) for n in names))
+            return export_zips(root, lambda names: bool(EXPORT_MARKERS & set(names))
+                               and any(re.fullmatch(r"conversations(-\d+)?\.json", n) for n in names))
         return [Path(root)]
 
     def load(self, unit: Path) -> ImportResult:

@@ -379,6 +379,11 @@ def test_official_exports_in_downloads_are_imported(tmp_path, monkeypatch):
         for n in z.namelist():
             out.writestr(n, z.read(n))
         out.writestr("chat.html", "<html></html>")
+    with _zf.ZipFile(src) as z, _zf.ZipFile(dl / "91e1-2026-11-25-09-39-57.zip", "w") as out:  # 2026 layout
+        for n in z.namelist():
+            out.writestr(n, z.read(n))
+        out.writestr("index.html", "<html></html>")
+        out.writestr("export_manifest.json", '{"export_files": []}')
     csrc = fx.claude_ai_export(tmp_path)
     with _zf.ZipFile(csrc) as z, _zf.ZipFile(dl / "data-2026-11-25.zip", "w") as out:
         for n in z.namelist():
@@ -389,10 +394,10 @@ def test_official_exports_in_downloads_are_imported(tmp_path, monkeypatch):
     (dl / "broken.zip").write_bytes(b"not a zip")
     s = Store(tmp_path / "s.db")
     reps = {r.platform: r for r in pipeline.sync(s, only=["chatgpt", "claude-ai"])}
-    assert reps["chatgpt"].units == 1 and s.get_conversation("chatgpt:cg-1").title == "Induction"
+    assert reps["chatgpt"].units == 2 and s.get_conversation("chatgpt:cg-1").title == "Induction"
     assert reps["claude-ai"].units == 1 and s.get_conversation("claude-ai:ca-1") is not None
     again = {r.platform: r for r in pipeline.sync(s, only=["chatgpt", "claude-ai"])}
-    assert again["chatgpt"].skipped == 1 and again["claude-ai"].skipped == 1
+    assert again["chatgpt"].skipped == 2 and again["claude-ai"].skipped == 1
     s.close()
 
 
