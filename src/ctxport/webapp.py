@@ -10,10 +10,15 @@ Security model (it can write other apps' config files, so it is locked down):
 from __future__ import annotations
 
 import json
+import os
 import secrets
+import shlex
+import shutil
+import socket
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
@@ -22,7 +27,7 @@ from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
 from . import __version__
-from .store import Store, default_home
+from .store import Store, default_home, ensure_private_dir, private_write_text
 
 AGENT_TARGETS = {
     "claude-code": "Claude Code",
@@ -52,13 +57,45 @@ def exports_dir() -> Path:
 
 # ---------------------------------------------------------------- text for paste / web memory
 
-def memory_text(store: Store, target: str) -> str:
+SIZES = ("compact", "standard", "full")
+
+
+def _prefs_file() -> Path:
+    return default_home() / "app-prefs.json"
+
+
+def profile_size_pref() -> str:
+    """The profile size the user picked in the app (also used by the extension's one-click write)."""
+    try:
+        v = json.loads(_prefs_file().read_text(encoding="utf-8")).get("profile_size")
+    except (OSError, ValueError, AttributeError):
+        v = None
+    return v if v in SIZES else "compact"
+
+
+def set_profile_size_pref(size: str) -> dict:
+    if size not in SIZES:
+        raise ValueError(f"unknown size {size}")
+    try:
+        prefs = json.loads(_prefs_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        prefs = {}
+    prefs["profile_size"] = size
+    ensure_private_dir(default_home())
+    private_write_text(_prefs_file(), json.dumps(prefs))
+    return {"profile_size": size}
+
+
+def _size(v) -> str:
+    return v if v in SIZES else profile_size_pref()
+
+
+def memory_text(store: Store, target: str, size: Optional[str] = None) -> str:
     """The text ctxport would put into `target` (accepted memories only, secrets masked)."""
-    from .distill import out_dir
+    from .distill import out_dir, profile_file
     if target in ("chatgpt", "claude-ai", "gemini-web", "cursor") and (out_dir() / "profile.md").exists():
         from .redact import redact as _redact
-        name = "profile.short.md" if target == "chatgpt" else "profile.md"
-        return _redact((out_dir() / name).read_text(encoding="utf-8"))
+        return _redact(profile_file("short" if target == "chatgpt" else _size(size)).read_text(encoding="utf-8"))
     from .adapters import get_exporter
     from .adapters.base import ExportOptions
     if target == "chatgpt":
@@ -100,7 +137,7 @@ def agent_targets() -> list:
     return out
 
 
-def apply_agent(key: str, project: Optional[str] = None) -> dict:
+def apply_agent(key: str, project: Optional[str] = None, size: Optional[str] = None) -> dict:
     from .adapters.base import ExportOptions
     from .cli import export_and_apply
     if key not in AGENT_TARGETS:
@@ -113,7 +150,8 @@ def apply_agent(key: str, project: Optional[str] = None) -> dict:
     with Store() as s:
         from .distill import out_dir
         r = export_and_apply(s, key, ExportOptions(out_dir=exports_dir(), apply=True, project=proj,
-                                                   extra={"distilled": (out_dir() / "profile.md").exists()}))
+                                                   extra={"distilled": (out_dir() / "profile.md").exists(),
+                                                          "profile_size": _size(size)}))
     return {"ok": True, "applied": r["applied"]}
 
 
@@ -205,7 +243,8 @@ def targets() -> dict:
 
 # ---------------------------------------------------------------- distillation (user-chosen model)
 
-_DISTILL = {"running": False, "lines": [], "result": None, "error": None}
+_DISTILL = {"running": False, "lines": [], "result": None, "error": None, "stop": False, "progress": None,
+            "usage": None, "halted": "", "waiting_until": None, "agent_now": ""}
 _DISTILL_LOCK = threading.Lock()
 
 
@@ -241,8 +280,10 @@ def distill_status() -> dict:
     with _DISTILL_LOCK:
         st = {k: (list(v) if isinstance(v, list) else v) for k, v in _DISTILL.items()}
     st["lines"] = st["lines"][-30:]
+    from .distill import profile_file
+    sizes = {k: len(profile_file(k).read_text(encoding="utf-8")) for k in SIZES} if p.exists() else {}
     st.update({"profile_exists": p.exists(), "profile_chars": len(p.read_text(encoding="utf-8")) if p.exists() else 0,
-               "last_run": last})
+               "last_run": last, "sizes": sizes})
     return st
 
 
@@ -285,8 +326,60 @@ def web_forget(platform: str, keep_web_sync: bool = False) -> dict:
 
 
 def distill_options() -> dict:
-    from .distill import agent_commands
-    return {"agents": sorted(agent_commands())}
+    from .distill import agent_choices, agent_commands
+    found = agent_commands()
+    return {"agents": sorted(found), "choices": agent_choices(), "paths": found}
+
+
+def _limit(v) -> Optional[int]:
+    try:
+        n = int(v)
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 else None
+
+
+_PREVIEW_CACHE: dict = {}
+
+
+def distill_preview(limit: Optional[int], agent: str = "", model: str = "", effort: str = "", mode: str = "direct") -> dict:
+    """Counting what is left reads every conversation (seconds for thousands), so the answer is kept until the
+    conversations or the cards change."""
+    from .distill import agent_pending, lean_pending, measured_per_conversation, open_cache
+    mode = "agent" if mode == "agent" else "direct"
+    with Store() as s:
+        total, newest = s.db.execute("SELECT COUNT(*), MAX(updated_at) FROM conversations").fetchone()
+        cache = open_cache()
+        cards, card_t = cache.execute("SELECT COUNT(*), MAX(created_at) FROM cards").fetchone()
+        cache.close()
+        key = (mode, limit, total, newest, cards, card_t)
+        r = dict(_PREVIEW_CACHE[key]) if key in _PREVIEW_CACHE else None
+        if r is None:
+            r = agent_pending(s, limit=limit) if mode == "agent" else lean_pending(s, limit=limit)
+            if len(_PREVIEW_CACHE) > 20:
+                _PREVIEW_CACHE.clear()
+            _PREVIEW_CACHE[key] = dict(r)
+    r["total"] = total
+    per = measured_per_conversation(agent, model, effort, mode) if agent else None
+    if per:
+        n = r["conversations"]
+        r["measured"] = {**per, "projected": {k: round(per[k] * n) for k in ("input", "cache_read", "cache_write", "output")}}
+    return r
+
+
+def distill_profile(size: str = "full") -> dict:
+    from .distill import out_dir, profile_file
+    if not (out_dir() / "profile.md").exists():
+        return {"text": "", "path": str(out_dir() / "profile.md")}
+    p = profile_file(size if size in SIZES else "full")
+    return {"text": p.read_text(encoding="utf-8"), "path": str(p)}
+
+
+def distill_stop() -> dict:
+    with _DISTILL_LOCK:
+        if _DISTILL["running"]:
+            _DISTILL["stop"] = True
+    return {"ok": True}
 
 
 def _distill_thread(job) -> None:
@@ -309,7 +402,8 @@ def _distill_thread(job) -> None:
     with _DISTILL_LOCK:
         if _DISTILL["running"]:
             raise ValueError("已经在提炼中")
-        _DISTILL.update(running=True, lines=[], result=None, error=None)
+        _DISTILL.update(running=True, lines=[], result=None, error=None, stop=False, progress=None, usage=None, halted="",
+                        waiting_until=None, agent_now="")
     threading.Thread(target=work, daemon=True).start()
 
 
@@ -325,19 +419,102 @@ def build_profile_now(note=None) -> dict:
     return {"chars": r["chars"], "log": r["log"]}
 
 
-def distill_agent(agent: str) -> dict:
+def _keep_awake():
+    """macOS: stop idle sleep while a long run or a wait for the quota is going on (released when it ends)."""
+    if sys.platform != "darwin" or not shutil.which("caffeinate"):
+        return None
+    try:
+        return subprocess.Popen(["caffeinate", "-i", "-w", str(os.getpid())])
+    except OSError:
+        return None
+
+
+def distill_agent(agent: str, model: str = "", effort: str = "", limit: Optional[int] = None, parallel: int = 1,
+                  fallback: Optional[dict] = None, wait: bool = False, mode: str = "direct") -> dict:
+    """Run the agent; when its quota runs out, optionally continue with `fallback` ({agent, model, effort}) and/or
+    wait until the quota is back (the time the agent named, else 30 minutes) and continue."""
     from . import distill as D
-    if agent not in D.agent_commands():
+    found = D.agent_commands()
+    if agent not in found:
         raise ValueError(f"没有找到 {agent} 命令行")
+    D.agent_command(agent, "x", "", model, effort)   # reject a bad model / effort before starting
+    plan = [(agent, model, effort)]
+    if fallback and fallback.get("agent") and fallback["agent"] != agent:
+        fb = (str(fallback["agent"]), str(fallback.get("model") or ""), str(fallback.get("effort") or ""))
+        if fb[0] not in found:
+            raise ValueError(f"没有找到 {fb[0]} 命令行，不能用它接着跑")
+        D.agent_command(fb[0], "x", "", fb[1], fb[2])
+        plan.append(fb)
+
+    def stopping() -> bool:
+        with _DISTILL_LOCK:
+            return _DISTILL["stop"]
+
+    def batch(i: int, n: int) -> None:
+        with _DISTILL_LOCK:
+            _DISTILL["progress"] = {"done": i, "total": n}
+
+    def usage(u: dict) -> None:
+        with _DISTILL_LOCK:
+            _DISTILL["usage"] = u
+
+    def one_pass(s, a, m, e, note) -> Optional[dict]:
+        label = " · ".join(x for x in (a, m or "默认模型", e and f"推理 {e}", parallel > 1 and f"{parallel} 批并行") if x)
+        with _DISTILL_LOCK:
+            _DISTILL.update(agent_now=a, halted="", waiting_until=None)
+        if mode == "agent":
+            prep = D.agent_prepare(s, D.work_dir("agent"), limit=limit)
+            note(f"{label}：{prep['conversations']} 个对话需要情节卡，共 {len(prep['batches'])} 批")
+            if not prep["conversations"]:
+                return None
+            r = D.run_agent(s, D.work_dir("agent"), a, progress=note, model=m, effort=e, should_stop=stopping,
+                            on_batch=batch, on_usage=usage, parallel=parallel)
+        else:
+            if D.work_dir("agent").joinpath("cards").is_dir():
+                D.agent_import(s, D.work_dir("agent"))      # cards an earlier agent run left behind
+            pend = D.lean_pending(s, limit=limit)
+            note(f"{label} · 省 token：{pend['conversations']} 个对话需要情节卡，分 {pend['batches']} 组提问")
+            if not pend["conversations"]:
+                return None
+            r = D.run_direct(s, a, model=m, effort=e, limit=limit, parallel=parallel, progress=note,
+                             should_stop=stopping, on_batch=batch, on_usage=usage)
+        note(f"完成 {r['batches_run']} 批，失败 {r['batches_failed']} 批，导入 {r['imported']} 张卡"
+             + ("；已按你的要求停止，再点开始会接着做" if r["stopped"] else ""))
+        return r
 
     def job(note):
-        with Store() as s:
-            prep = D.agent_prepare(s, D.work_dir("agent"))
-            note(f"{prep['conversations']} 个对话需要情节卡，共 {len(prep['batches'])} 批")
-            if prep["conversations"]:
-                r = D.run_agent(s, D.work_dir("agent"), agent, progress=note)
-                note(f"{agent}：完成 {r['batches_run']} 批，失败 {r['batches_failed']} 批，导入 {r['imported']} 张卡")
-        return build_profile_now(note)
+        awake = _keep_awake()
+        try:
+            with Store() as s:
+                while True:
+                    reasons = []
+                    for a, m, e in plan:
+                        r = one_pass(s, a, m, e, note)
+                        if not r or not r.get("halted"):
+                            return build_profile_now(note)       # finished, nothing left, or stopped by the user
+                        reasons.append(r["halted"])
+                        with _DISTILL_LOCK:
+                            _DISTILL["halted"] = r["halted"]
+                        if (a, m, e) != plan[-1]:
+                            note(f"{a} 额度用完了，换成 {plan[plan.index((a, m, e)) + 1][0]} 接着跑")
+                    if not wait or stopping():
+                        return build_profile_now(note)
+                    build_profile_now(note)                       # the profile is usable while we wait
+                    times = [t for t in (D.limit_reset_time(x) for x in reasons) if t]
+                    until = (min(times) if times else time.time() + 1800) + 60
+                    with _DISTILL_LOCK:
+                        _DISTILL["waiting_until"] = until
+                    note(f"额度都用完了，等到 {time.strftime('%H:%M', time.localtime(until))} 自动继续"
+                         "（电脑会保持不睡眠；点“停止”可以取消）")
+                    while time.time() < until:
+                        if stopping():
+                            return build_profile_now(note)
+                        time.sleep(2)
+        finally:
+            with _DISTILL_LOCK:
+                _DISTILL["waiting_until"] = None
+            if awake:
+                awake.terminate()
 
     _distill_thread(job)
     return {"ok": True}
@@ -384,7 +561,7 @@ def distill_start() -> dict:
     with _DISTILL_LOCK:
         if _DISTILL["running"]:
             raise ValueError("已经在提炼中")
-        _DISTILL.update(running=True, lines=[], result=None, error=None)
+        _DISTILL.update(running=True, lines=[], result=None, error=None, stop=False, progress=None)
 
     def note(line: str) -> None:
         with _DISTILL_LOCK:
@@ -475,6 +652,13 @@ class AppHandler(BaseHTTPRequestHandler):
                 return self._json(200, distill_status())
             if u.path == "/api/distill/options":
                 return self._json(200, distill_options())
+            if u.path == "/api/prefs":
+                return self._json(200, {"profile_size": profile_size_pref()})
+            if u.path == "/api/distill/preview":
+                return self._json(200, distill_preview(_limit(q.get("limit")), q.get("agent", ""), q.get("model", ""),
+                                                       q.get("effort", ""), q.get("mode", "direct")))
+            if u.path == "/api/distill/profile":
+                return self._json(200, distill_profile(q.get("size", "full")))
             if u.path == "/api/distill/web":
                 lim = q.get("limit", "")
                 return self._json(200, web_list(int(lim) if lim.isdigit() and int(lim) > 0 else None))
@@ -482,7 +666,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 return self._json(200, {"text": web_prompt(q.get("name", ""))})
             if u.path == "/api/text":
                 with Store() as s:
-                    return self._json(200, {"text": memory_text(s, q.get("target", ""))})
+                    return self._json(200, {"text": memory_text(s, q.get("target", ""), q.get("size"))})
         except KeyError as e:
             return self._json(400, {"error": f"unknown target {e}"})
         except (ValueError, RuntimeError, FileNotFoundError) as e:
@@ -514,7 +698,20 @@ class AppHandler(BaseHTTPRequestHandler):
             if path == "/api/distill/agent":
                 if payload.get("confirm") is not True:
                     return self._json(400, {"error": "confirmation required"})
-                return self._json(200, distill_agent(str(payload.get("agent"))))
+                return self._json(200, distill_agent(str(payload.get("agent")), str(payload.get("model") or ""),
+                                                     str(payload.get("effort") or ""), _limit(payload.get("limit")),
+                                                     min(_limit(payload.get("parallel")) or 1, 16),
+                                                     payload.get("fallback") if isinstance(payload.get("fallback"), dict) else None,
+                                                     bool(payload.get("wait")),
+                                                     "agent" if payload.get("mode") == "agent" else "direct"))
+            if path == "/api/distill/stop":
+                return self._json(200, distill_stop())
+            if path == "/api/distill/reveal":
+                prof = distill_profile()
+                if not prof["text"]:
+                    raise ValueError("还没有档案，先完成第 2 步")
+                reveal(prof["path"])
+                return self._json(200, {"ok": True})
             if path == "/api/web-data/forget":
                 if payload.get("confirm") is not True:
                     return self._json(400, {"error": "confirmation required"})
@@ -539,8 +736,11 @@ class AppHandler(BaseHTTPRequestHandler):
                 return self._json(200, distill_start())
             if path == "/api/memories/update":
                 return self._json(200, memories_update(payload))
+            if path == "/api/prefs":
+                return self._json(200, set_profile_size_pref(str(payload.get("profile_size"))))
             if path == "/api/agent/apply":
-                return self._json(200, apply_agent(str(payload.get("key")), payload.get("project") or None))
+                return self._json(200, apply_agent(str(payload.get("key")), payload.get("project") or None,
+                                                   _size(payload.get("size"))))
             if path == "/api/mcp/connect":
                 key = str(payload.get("key"))
                 if key not in connect.TARGETS:
@@ -576,9 +776,39 @@ def make_server(port: int = 8766, token: Optional[str] = None) -> ThreadingHTTPS
     return srv
 
 
+def _url_file() -> Path:
+    return default_home() / "app-url"
+
+
+def running_url(port: int) -> Optional[str]:
+    """URL (with token) of a ctxport app already serving on `port`, if there is one."""
+    try:
+        url = _url_file().read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if urlparse(url).port != port:
+        return None
+    try:
+        socket.create_connection(("127.0.0.1", port), timeout=1).close()
+    except OSError:
+        return None
+    return url
+
+
 def serve(port: int = 8766, open_browser: bool = True) -> None:
-    srv = make_server(port)
+    try:
+        srv = make_server(port)
+    except OSError:
+        url = running_url(port)
+        if not url:
+            raise
+        print(f"ctxport app is already running: {url}", flush=True)
+        if open_browser:
+            webbrowser.open(url)
+        return
     url = f"http://127.0.0.1:{AppHandler.port}/#t={AppHandler.token}"
+    ensure_private_dir(default_home())
+    private_write_text(_url_file(), url)   # lets a second launch (the desktop launcher) reopen this one
     print(f"ctxport app: {url}\n(only reachable from this computer; Ctrl+C to stop)", flush=True)
     if open_browser:
         threading.Timer(0.3, lambda: webbrowser.open(url)).start()
@@ -588,4 +818,39 @@ def serve(port: int = 8766, open_browser: bool = True) -> None:
         pass
     finally:
         srv.server_close()
+        try:
+            if _url_file().read_text(encoding="utf-8").strip() == url:
+                _url_file().unlink()
+        except OSError:
+            pass
+
+
+LAUNCHER_MARK = "ctxport-launcher"
+
+
+def _applescript_str(s: str) -> str:
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def make_launcher(folder: Path) -> Path:
+    """A double-clickable ctxport.app (macOS) that starts the app in the background, or reopens the running one.
+
+    The PATH of this shell is baked in: apps started from Finder get a bare PATH, and the app needs it to find
+    `claude` and `codex` for distillation."""
+    if sys.platform != "darwin" or not shutil.which("osacompile"):
+        raise RuntimeError("the launcher is only available on macOS")
+    exe = shutil.which("ctxport") or str(Path(sys.argv[0]).resolve())
+    dest = Path(folder).expanduser() / "ctxport.app"
+    if dest.exists():
+        if not (dest / "Contents" / "Resources" / LAUNCHER_MARK).exists():
+            raise RuntimeError(f"{dest} exists and is not a ctxport launcher; not replacing it")
+        shutil.rmtree(dest)
+    log = default_home() / "app.log"
+    path = os.environ.get("PATH", "")
+    cmd = ("export PATH=" + shlex.quote(path) + "; nohup " + shlex.quote(exe) + " app >> " + shlex.quote(str(log))
+           + " 2>&1 &")
+    script = "do shell script " + _applescript_str(cmd)
+    subprocess.run(["osacompile", "-o", str(dest), "-e", script], check=True, capture_output=True, text=True)
+    (dest / "Contents" / "Resources" / LAUNCHER_MARK).write_text(exe + "\n", encoding="utf-8")
+    return dest
 

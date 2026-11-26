@@ -108,7 +108,7 @@ ctxport search 机器学习 部署       # 中文 ≥3 字走 FTS5，2 字自动
 ctxport app
 ```
 
-在浏览器里打开一个只在本机运行的页面（`127.0.0.1`，每次启动都有新的随机访问令牌），不用记命令：
+在浏览器里打开一个只在本机运行的页面（`127.0.0.1`，每次启动都有新的随机访问令牌），不用记命令。macOS 上运行一次 `ctxport app --launcher ~/Desktop`，桌面上会出现可双击的 ctxport.app：双击在后台启动并打开页面，已经开着时直接重新打开那一页。
 
 | 区块 | 一键做什么 |
 |---|---|
@@ -131,7 +131,7 @@ ctxport distill --manual ~/ctxport-web   # 生成提示词，逐批贴进 ChatGP
 ctxport export claude-code --distilled --apply
 ```
 
-`ctxport app` 里有同样的按钮，网页版还可以选“只处理最近 50 / 200 个对话”。完整版档案覆盖率按构造为 100%；ChatGPT 这类有字数上限的目标用按重要度挑选的精简版，并报告覆盖比例。每次运行的统计写在 `~/.ctxport/distilled/run-*.json`。（高级：`--api` 可改用 `ctxport llm set` 配置的 OpenAI 兼容接口。）
+`ctxport app` 里这是带引导的第 2 步，默认用“省 token”方式：先压缩对话（代码只留“是干什么的”，长段粘贴只留开头和结尾），几个对话打包成一次提问，token 大约只有让 Agent 逐个读文件的十分之一（那种方式仍可选）。选 Claude Code 或 Codex（也能用 ChatGPT 桌面应用自带的 Codex）、模型（Haiku、Sonnet、Opus，或自己填模型名）、推理程度和处理最近多少个对话；开始前显示要处理多少个对话、分几批、预计多少 token（跑完第一批后按 Agent 报告的实际用量预估），运行时有进度条和“停止”按钮（再点开始会接着做）。网页版也可以选“只处理最近 50 / 200 个对话”。完整版档案覆盖率按构造为 100%；ChatGPT 这类有字数上限的目标用按重要度挑选的精简版，并报告覆盖比例。每次运行的统计写在 `~/.ctxport/distilled/run-*.json`。（高级：`--api` 可改用 `ctxport llm set` 配置的 OpenAI 兼容接口。）
 
 ## 一条命令总结你的个人背景
 

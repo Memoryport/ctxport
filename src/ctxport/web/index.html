@@ -17,62 +17,138 @@
       --err: #f87171; --shadow: none; }
   }
   * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 76px; }
   body { margin: 0; background: var(--bg); color: var(--fg);
-    font: 14px/1.55 -apple-system, "SF Pro Text", "Segoe UI", system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; }
-  header { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent);
+    font: 14px/1.6 -apple-system, "SF Pro Text", "Segoe UI", system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  header.top { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent);
     backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
-  .bar { max-width: 1080px; margin: 0 auto; padding: 14px 20px; display: flex; align-items: center; gap: 14px; }
+  .bar { max-width: 1160px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; gap: 14px; }
   .logo { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 16px; letter-spacing: .2px; }
   .logo i { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); display: grid; place-items: center;
     color: #fff; font-style: normal; font-size: 13px; font-weight: 700; }
+  .logo small { font-weight: 400; color: var(--muted); font-size: 13px; }
   .chips { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
   .chip { font-size: 12px; color: var(--muted); background: var(--panel); border: 1px solid var(--line);
     padding: 4px 10px; border-radius: 999px; display: flex; align-items: center; gap: 6px; }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
   .dot.ok { background: var(--ok); } .dot.off { background: var(--err); }
-  main { max-width: 1080px; margin: 0 auto; padding: 22px 20px 60px; }
-  h2 { font-size: 15px; margin: 30px 0 4px; }
-  .sub { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
-  .hero { display: grid; grid-template-columns: 1.3fr 1fr; gap: 14px; }
+
+  .layout { max-width: 1160px; margin: 0 auto; padding: 22px 20px 80px; display: grid; grid-template-columns: 214px minmax(0, 1fr); gap: 28px; }
+  main, .field > div, .two > div { min-width: 0; }
+  nav.steps { position: sticky; top: 78px; align-self: start; display: flex; flex-direction: column; gap: 2px; }
+  nav.steps a { display: grid; grid-template-columns: 26px 1fr; gap: 10px; align-items: center; padding: 9px 10px;
+    border-radius: 10px; color: var(--fg); text-decoration: none; }
+  nav.steps a:hover { background: var(--soft); }
+  nav.steps a.cur { background: var(--accent-soft); }
+  nav.steps .n { width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--line); display: grid; place-items: center;
+    font-size: 12.5px; font-weight: 650; color: var(--muted); background: var(--panel); }
+  nav.steps a.done .n { background: var(--ok); border-color: var(--ok); color: #fff; }
+  nav.steps a.cur .n { border-color: var(--accent); color: var(--accent); }
+  nav.steps b { display: block; font-size: 13.5px; font-weight: 600; }
+  nav.steps span.s { display: block; font-size: 12px; color: var(--muted); }
+  nav.steps .line { width: 1.5px; height: 10px; background: var(--line); margin-left: 22px; }
+
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
-  .stats { padding: 16px 18px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-  .stat b { display: block; font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .next { padding: 18px 20px; display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center;
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); background: linear-gradient(0deg, var(--panel), var(--panel)),
+    var(--panel); }
+  .next .k { font-size: 12px; color: var(--accent); font-weight: 650; letter-spacing: .3px; }
+  .next h1 { font-size: 19px; margin: 2px 0 4px; }
+  .next p { margin: 0; color: var(--muted); font-size: 13px; }
+  details.intro { margin-top: 10px; }
+  details.intro summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  .flow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
+  .flow div { background: var(--soft); border-radius: 10px; padding: 10px 12px; font-size: 13px; }
+  .flow b { display: block; margin-bottom: 2px; }
+
+  section.step { margin-top: 34px; }
+  .shead { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+  .shead .n { width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center;
+    font-weight: 700; flex: none; margin-top: 1px; }
+  .shead.done .n { background: var(--ok); }
+  .shead h2 { font-size: 17px; margin: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .shead p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  .howto { margin: 0 0 14px; padding: 12px 16px 12px 34px; background: var(--soft); border-radius: 10px; font-size: 13px; }
+  .howto li { margin: 2px 0; }
+  .howto li::marker { color: var(--accent); font-weight: 650; }
+  h3 { font-size: 14px; margin: 22px 0 2px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
+
+  .stats { padding: 14px 18px; display: grid; grid-template-columns: repeat(3, auto) 1fr; gap: 26px; align-items: center; }
+  .stat b { display: block; font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.2; }
   .stat span { color: var(--muted); font-size: 12px; }
-  .plats { padding: 4px 18px 14px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .plats { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
   .plats span { font-size: 12px; background: var(--soft); border-radius: 6px; padding: 3px 8px; color: var(--muted); }
-  .memcard { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
-  .memcard .row { display: flex; justify-content: space-between; align-items: baseline; }
-  .memcard p { margin: 0; color: var(--muted); font-size: 13px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
-  .card { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-height: 132px; }
+  .two { display: grid; grid-template-columns: 1.45fr 1fr; gap: 12px; }
+  .card { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-height: 120px; }
   .card .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .card .name { font-weight: 600; }
   .card .meta { color: var(--muted); font-size: 12px; word-break: break-all; flex: 1; }
-  .badge { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; background: var(--soft); color: var(--muted); }
+  .card ol { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; flex: 1; }
+  .badge { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; background: var(--soft); color: var(--muted); font-weight: 500; }
   .badge.ok { background: var(--ok-soft); color: var(--ok); }
   .badge.warn { background: var(--warn-soft); color: var(--warn); }
-  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .badge.acc { background: var(--accent-soft); color: var(--accent); }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   button { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--panel); color: var(--fg);
     border-radius: 8px; padding: 7px 12px; cursor: pointer; transition: background .12s, border-color .12s; }
   button:hover { background: var(--soft); }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
   button.primary:hover { filter: brightness(1.06); }
+  button.big { padding: 10px 18px; font-size: 14px; }
   button.danger { color: var(--err); border-color: color-mix(in srgb, var(--err) 45%, var(--line)); }
   button.danger:hover { background: color-mix(in srgb, var(--err) 8%, var(--panel)); }
   button.ghost { border-color: transparent; color: var(--muted); }
   button:disabled { opacity: .5; cursor: default; }
-  input[type=text] { font: inherit; font-size: 13px; width: 100%; border: 1px solid var(--line); border-radius: 8px;
+  input[type=text], select, textarea { font: inherit; font-size: 13px; border: 1px solid var(--line); border-radius: 8px;
     padding: 7px 10px; background: var(--soft); color: var(--fg); }
+  input[type=text] { width: 100%; }
   .note { font-size: 12px; color: var(--muted); }
+  details.more { margin-top: 14px; }
+  details.more summary { cursor: pointer; font-size: 13px; color: var(--muted); padding: 6px 0; }
+
+  /* distill */
+  .tabs-m { display: flex; gap: 4px; padding: 4px; background: var(--soft); border-radius: 10px; width: fit-content; margin-bottom: 12px; flex-wrap: wrap; }
+  .tabs-m button { border: 0; background: transparent; color: var(--muted); padding: 6px 12px; }
+  .tabs-m button.on { background: var(--panel); color: var(--fg); font-weight: 600; box-shadow: var(--shadow); }
+  .form { padding: 16px 18px; display: grid; gap: 14px; }
+  .field { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px; align-items: start; }
+  .field > label { font-size: 13px; font-weight: 600; padding-top: 6px; }
+  .field .help { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .seg { display: inline-flex; flex-wrap: nowrap; max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { white-space: nowrap; border: 0; border-right: 1px solid var(--line); border-radius: 0; padding: 6px 11px; background: var(--panel); }
+  .seg button:last-child { border-right: 0; }
+  .seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .preview { background: var(--soft); border-radius: 8px; padding: 9px 12px; font-size: 13px; }
+  .progress { height: 6px; background: var(--soft); border-radius: 99px; overflow: hidden; }
+  .progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+  .status { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+  .status .big { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  pre.log { white-space: pre-wrap; margin: 0; max-height: 150px; overflow: auto; font-size: 12px; color: var(--muted);
+    background: var(--soft); border-radius: 8px; padding: 8px 10px; }
+  pre.log:empty { display: none; }
+  .checks { display: flex; flex-direction: column; gap: 6px; padding-top: 5px; font-size: 13px; }
+  .checks label { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+  .checks input { margin-top: 3px; }
+  .nextbox { border-radius: 10px; padding: 12px 14px; background: var(--accent-soft); display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+  .nextbox.warn { background: var(--warn-soft); }
+  .nextbox b.t { font-size: 14px; }
+  .nextbox .why { font-size: 12px; color: var(--muted); word-break: break-word; }
+  .web-flow { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+  textarea { width: 100%; }
+
   /* review drawer */
   .drawer { position: fixed; inset: 0; background: rgba(0,0,0,.28); display: none; z-index: 20; }
   .drawer.open { display: block; }
-  .sheet { position: absolute; right: 0; top: 0; bottom: 0; width: min(720px, 100%); background: var(--panel);
+  .sheet { position: absolute; right: 0; top: 0; bottom: 0; width: min(760px, 100%); background: var(--panel);
     border-left: 1px solid var(--line); display: flex; flex-direction: column; }
-  .sheet header { position: static; background: var(--panel); }
-  .tabs { display: flex; gap: 4px; padding: 0 20px 10px; }
+  .sheet .bar { padding: 14px 20px; }
+  .tabs { display: flex; gap: 4px; padding: 0 20px 10px; align-items: center; }
   .tabs button.on { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .dr-help { margin: 0 20px 10px; font-size: 12.5px; color: var(--muted); background: var(--soft); border-radius: 8px; padding: 8px 12px; }
   .list { overflow: auto; padding: 0 20px 20px; flex: 1; }
+  .profile { white-space: pre-wrap; font-size: 13px; line-height: 1.7; }
   .mem { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); }
   .mem .t { white-space: pre-wrap; word-break: break-word; max-height: 6.3em; overflow: hidden; }
   .mem.long .t { cursor: pointer; -webkit-mask-image: linear-gradient(#000 65%, transparent);
@@ -87,13 +163,30 @@
   .toast.show { opacity: .96; }
   .toast.err { background: var(--err); color: #fff; }
   .empty { color: var(--muted); padding: 30px 0; text-align: center; }
-  @media (max-width: 760px) { .hero { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(3, 1fr); } }
+  [hidden] { display: none !important; }
+
+  @media (max-width: 1100px) { .two { grid-template-columns: 1fr; } }
+  @media (max-width: 900px) {
+    .logo small, #chip-ver { display: none; }
+    .bar { padding: 10px 16px; }
+    .chip { padding: 3px 8px; }
+    .layout { padding: 16px 16px 60px; }
+    .layout { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+    nav.steps { position: static; flex-direction: row; overflow-x: auto; gap: 4px; }
+    nav.steps a { grid-template-columns: 24px auto; white-space: nowrap; }
+    nav.steps span.s, nav.steps .line { display: none; }
+    .two, .flow { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: repeat(3, 1fr); }
+    .plats { grid-column: 1 / -1; justify-content: flex-start; }
+    .next { grid-template-columns: 1fr; }
+    .field { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  }
 </style>
 </head>
 <body>
-<header>
+<header class="top">
   <div class="bar">
-    <div class="logo"><i>&lt;&gt;</i>ctxport</div>
+    <div class="logo"><i>&lt;&gt;</i>ctxport <small>把你在各个 AI 里的记忆带走</small></div>
     <div class="chips">
       <div class="chip" id="chip-ext"><span class="dot"></span><span>浏览器扩展</span></div>
       <div class="chip" id="chip-recv"><span class="dot"></span><span>本地接收服务</span></div>
@@ -102,106 +195,222 @@
   </div>
 </header>
 
-<main>
-  <section class="hero">
-    <div class="panel">
-      <div class="stats">
+<div class="layout">
+  <nav class="steps" id="steps">
+    <a href="#step-1" data-step="1"><span class="n">1</span><span><b>收集聊天记录</b><span class="s" id="ns-1">–</span></span></a>
+    <div class="line"></div>
+    <a href="#step-2" data-step="2"><span class="n">2</span><span><b>提炼记忆档案</b><span class="s" id="ns-2">–</span></span></a>
+    <div class="line"></div>
+    <a href="#step-3" data-step="3"><span class="n">3</span><span><b>检查和修改</b><span class="s" id="ns-3">–</span></span></a>
+    <div class="line"></div>
+    <a href="#step-4" data-step="4"><span class="n">4</span><span><b>导入到其他 AI</b><span class="s" id="ns-4">–</span></span></a>
+  </nav>
+
+  <main>
+    <div class="panel next" id="next">
+      <div>
+        <div class="k">下一步</div>
+        <h1 id="next-title">加载中…</h1>
+        <p id="next-why"></p>
+      </div>
+      <button class="primary big" id="next-go">去这一步</button>
+    </div>
+    <details class="intro">
+      <summary>第一次用？ctxport 在做什么</summary>
+      <div class="flow">
+        <div><b>1 收集</b>把 ChatGPT、Claude、Codex 等的聊天记录汇总到这台电脑上的一个数据库里。全程在本机，不上传。</div>
+        <div><b>2 提炼</b>让你自己的 AI（比如 Claude Code）把所有对话读一遍，写成一份“关于你”的档案：身份、项目、偏好、习惯。</div>
+        <div><b>3 导入</b>把这份档案一键写进别的 AI：Claude Code、Codex、Cursor、ChatGPT、Claude 网页版……换 AI 不用从头介绍自己。</div>
+      </div>
+    </details>
+
+    <!-- ===================================================== 1 collect -->
+    <section class="step" id="step-1">
+      <div class="shead" id="sh-1"><span class="n">1</span><div>
+        <h2>收集聊天记录 <span class="badge" id="sb-1"></span></h2>
+        <p>本机上的 Claude Code、Codex、Cherry Studio、Chatbox 等会自动读取；网页版的 ChatGPT 和 Claude 需要用官方导出。</p>
+      </div></div>
+      <div class="panel stats">
         <div class="stat"><b id="s-convs">–</b><span>对话</span></div>
         <div class="stat"><b id="s-msgs">–</b><span>消息</span></div>
-        <div class="stat"><b id="s-plats">–</b><span>来源平台</span></div>
+        <div class="stat"><b id="s-plats">–</b><span>来源</span></div>
+        <div class="plats" id="plats"></div>
       </div>
-      <div class="plats" id="plats"></div>
-    </div>
-    <div class="panel memcard">
-      <div class="row"><b>记忆</b><span class="note">只有“已确认”的记忆会被导入</span></div>
-      <div class="row">
-        <span><b id="m-acc" style="font-size:20px">–</b> <span class="note">已确认</span></span>
-        <span><b id="m-cand" style="font-size:20px">–</b> <span class="note">待审核</span></span>
+      <h3>网页版 AI：用官方导出</h3>
+      <p class="sub">导出包下载到“下载”文件夹后点一下就能导入；重复导入会自动去重，不会多出对话。</p>
+      <div class="grid">
+        <div class="panel card"><div class="top"><span class="name">ChatGPT</span><span class="badge">官方导出</span></div>
+          <ol><li>点“发起导出”（装了扩展会替你点；没装就打开设置页，你点“导出数据”）</li>
+            <li>几分钟到一天内，ChatGPT 会把下载链接发到你的邮箱</li>
+            <li>下载 zip（不用解压），回来点“检查下载文件夹”</li></ol>
+          <div class="actions"><button class="primary" id="x-request">发起导出</button><button data-import-dl>检查下载文件夹</button></div></div>
+        <div class="panel card"><div class="top"><span class="name">Claude.ai</span><span class="badge">官方导出</span></div>
+          <ol><li>点“打开导出页面”，在 Claude 设置 → 隐私 里点“导出数据”</li>
+            <li>邮件里下载 zip 到“下载”文件夹</li>
+            <li>回来点“检查下载文件夹”</li></ol>
+          <div class="actions"><button id="x-claude">打开导出页面</button><button data-import-dl>检查下载文件夹</button></div></div>
       </div>
-      <div class="actions">
-        <button class="primary" data-open="candidate">审核候选记忆</button>
-        <button data-open="accepted">查看已确认</button>
+      <details class="more">
+        <summary>浏览器扩展同步的记录（不用扩展可以跳过）</summary>
+        <p class="sub">扩展会一条条读回网页上的对话，比较慢。改用官方导出后，可以在这里删掉扩展收集的部分并停止同步；官方导出的对话和你确认过的记忆都会保留。</p>
+        <div class="grid" id="webdata"></div>
+      </details>
+    </section>
+
+    <!-- ===================================================== 2 distill -->
+    <section class="step" id="step-2">
+      <div class="shead" id="sh-2"><span class="n">2</span><div>
+        <h2>提炼记忆档案 <span class="badge" id="sb-2"></span></h2>
+        <p>用你已经在用的 AI 读每一个对话、写一张“情节卡”；ctxport 在本机把卡片合并去重，写成一份按主题分组的档案，并检查每条事实都写进去了。不需要 API Key。</p>
+      </div></div>
+      <div class="tabs-m" id="mtabs">
+        <button data-m="agent" class="on">Claude Code / Codex（推荐）</button>
+        <button data-m="web">网页版 AI（复制粘贴）</button>
+        <button data-m="folder">其他 Agent</button>
       </div>
-    </div>
-  </section>
-
-  <h2>完整记忆档案</h2>
-  <p class="sub">用你已有的 AI（Claude Code、Codex、ChatGPT / Claude 网页版等），把所有对话分层提炼成一份完整档案：每个对话一张“情节卡”，合并去重，再写成按主题分组的档案。程序会检查每一条事实都被写进去（覆盖率），生成后上面各处的“一键导入”都会改用这份档案。</p>
-  <div class="hero">
-    <div class="panel memcard">
-      <div class="row"><b>档案状态</b><span class="note" id="d-run"></span></div>
-      <div id="d-status" class="note">加载中…</div>
-      <div class="actions">
-        <span class="note" id="d-hint">用右边任意一种方式生成情节卡</span>
+      <div class="two">
+        <div>
+          <!-- agent -->
+          <div class="panel form" id="m-agent">
+            <div id="agent-missing" class="note" hidden>这台电脑上没有找到 Claude Code 或 Codex（包括 ChatGPT 桌面应用自带的 Codex）。可以安装后重新打开 ctxport，或者改用“网页版 AI”。</div>
+            <div class="field"><label>方式</label><div>
+              <div class="seg" id="f-mode"><button data-v="direct">省 token（推荐）</button><button data-v="agent">Agent 逐个读文件</button></div>
+              <div class="help" id="f-mode-help"></div></div></div>
+            <div class="field"><label>用哪个</label><div>
+              <div class="seg" id="f-agent"></div>
+              <div class="help" id="f-agent-help"></div></div></div>
+            <div class="field"><label>模型</label><div>
+              <select id="f-model"></select>
+              <input type="text" id="f-model-custom" placeholder="完整模型名，例如 claude-sonnet-5-5" hidden style="margin-top:6px">
+              <div class="help" id="f-model-help">写情节卡主要是把事实摘出来，中等模型通常就够了。</div></div></div>
+            <div class="field"><label>推理程度</label><div>
+              <div class="seg" id="f-effort"></div>
+              <div class="help">越高越仔细，也越慢、越耗额度。推荐 low；对话很杂乱时可以试 medium。</div></div></div>
+            <div class="field"><label>处理范围</label><div>
+              <select id="f-limit">
+                <option value="50">最近 50 个对话（先试一下）</option><option value="200">最近 200 个</option>
+                <option value="500">最近 500 个</option><option value="1000">最近 1000 个</option><option value="">全部对话</option></select>
+              <div class="help">已经写过卡片、内容也没变的对话会自动跳过，所以可以先试一小批，满意了再扩大范围。</div></div></div>
+            <div class="field"><label>同时跑几批</label><div>
+              <div class="seg" id="f-par"><button data-v="1">1</button><button data-v="2">2</button><button data-v="4">4 ★</button><button data-v="8">8</button><button data-v="16">16</button></div>
+              <div class="help">几批同时处理，速度大约快几倍，额度消耗总量不变。开太多会撞上服务商的速率限制、也更吃电脑内存，一般 4–8 就够。</div></div></div>
+            <div class="field"><label>额度用完时</label><div>
+              <div class="checks">
+                <label id="f-fb-row"><input type="checkbox" id="f-fb"><span id="f-fb-label">换成另一个 Agent 接着跑</span></label>
+                <label><input type="checkbox" id="f-wait"><span>都用完了就等额度恢复，到点自动继续</span></label>
+              </div>
+              <div class="help">都不勾时会暂停，已写好的卡片都保留。等待期间电脑会保持不睡眠，ctxport 要一直开着；点“停止”可以取消等待。</div></div></div>
+            <div class="preview" id="f-preview">计算中…</div>
+            <div class="progress" id="f-progress" hidden><i></i></div>
+            <div class="actions">
+              <button class="primary big" id="f-start">开始提炼</button>
+              <button class="danger" id="f-stop" hidden>停止</button>
+              <span class="note" id="f-state"></span>
+            </div>
+          </div>
+          <!-- web -->
+          <div class="panel form" id="m-web" hidden>
+            <ol class="howto" style="margin:0">
+              <li>选择范围，点“准备批次”</li>
+              <li>点“复制这一批”，粘贴到 ChatGPT 或 Claude 网页的<b>新对话</b>里发送</li>
+              <li>把 AI 回复的整段 JSON 复制回下面的框，点“提交这一批”；再做下一批</li>
+              <li>全部提交后，点右边的“生成档案”</li>
+            </ol>
+            <div class="actions">
+              <select id="w-limit"><option value="50">最近 50 个对话</option><option value="200">最近 200 个</option><option value="">全部</option></select>
+              <button class="primary" id="w-open">准备批次</button>
+            </div>
+            <div id="web-flow" hidden style="display:flex;flex-direction:column;gap:10px">
+              <div class="actions"><select id="w-batch"></select><span class="note" id="w-count"></span></div>
+              <div class="actions"><button class="primary" id="w-copy">复制这一批</button>
+                <button id="w-chatgpt">打开 ChatGPT</button><button id="w-claude">打开 Claude</button></div>
+              <textarea id="w-reply" rows="6" placeholder="把 AI 的回复粘贴到这里"></textarea>
+              <div class="actions"><button class="primary" id="w-submit">提交这一批</button></div>
+            </div>
+          </div>
+          <!-- folder -->
+          <div class="panel form" id="m-folder" hidden>
+            <ol class="howto" style="margin:0">
+              <li>点“打开任务文件夹”，ctxport 会把待处理的对话和说明（TASK.md）放进去</li>
+              <li>在任意 Agent（Cursor、Windsurf、Gemini CLI……）里打开这个文件夹，对它说：<br>
+                “按 TASK.md 处理 conversations/ 里还没有卡片的文件”</li>
+              <li>它写完 cards/ 之后，回来点右边的“生成档案”</li>
+            </ol>
+            <div class="actions"><button class="primary" id="d-folder">打开任务文件夹</button></div>
+          </div>
+        </div>
+        <div class="panel status">
+          <div class="actions" style="justify-content:space-between"><b>档案</b><span class="note" id="d-run"></span></div>
+          <div id="d-status" class="note">加载中…</div>
+          <div class="nextbox" id="d-next" hidden></div>
+          <pre class="log" id="d-lines"></pre>
+          <div class="actions">
+            <button id="d-view">查看档案</button>
+            <button id="d-build" title="把已经写好的情节卡重新合并成档案，不调用任何模型">生成档案</button>
+          </div>
+        </div>
       </div>
-      <pre id="d-lines" class="note" style="white-space:pre-wrap;margin:0;max-height:140px;overflow:auto"></pre>
-    </div>
-    <div class="panel memcard">
-      <div class="row"><b>用你已有的 AI 来提炼</b><span class="note">不需要 API Key</span></div>
-      <div class="note">让你自己的 Agent 或网页版 AI 读对话、写“情节卡”；合并、去重和覆盖检查由 ctxport 在本机完成。</div>
-      <div class="actions" id="agent-btns"></div>
-      <div class="actions">
-        <select id="w-limit" title="网页版需要逐批复制粘贴，对话很多时建议先处理最近的一部分" style="font:inherit;font-size:13px;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--soft);color:var(--fg)">
-          <option value="50">最近 50 个对话</option><option value="200">最近 200 个</option><option value="">全部</option></select>
-        <button id="w-open">用 ChatGPT / Claude 网页版</button>
-        <button id="d-folder">打开任务文件夹（任意 Agent）</button>
+    </section>
+
+    <!-- ===================================================== 3 review -->
+    <section class="step" id="step-3">
+      <div class="shead" id="sh-3"><span class="n">3</span><div>
+        <h2>检查和修改 <span class="badge" id="sb-3"></span></h2>
+        <p>导入前看一眼，删掉不对或不想让别的 AI 知道的内容。</p>
+      </div></div>
+      <div class="grid">
+        <div class="panel card"><div class="top"><span class="name">记忆档案</span><span class="badge" id="r-prof">–</span></div>
+          <div class="meta">第 2 步生成的档案，分精简、标准、完整三个版本；第 4 步导入的是你选的那个版本（ChatGPT 有 1400 字上限，始终用最短的版本）。</div>
+          <div class="actions"><button class="primary" data-view-profile>查看档案</button><button id="r-reveal">在访达中显示</button></div></div>
+        <div class="panel card"><div class="top"><span class="name">单条记忆</span><span class="badge"><span id="m-acc">–</span> 已确认 · <span id="m-cand">–</span> 待审核</span></div>
+          <div class="meta">从聊天里自动摘出的短句（比如“用户偏好简洁回答”）。只有“已确认”的会被导入；没有档案时就导入这些。</div>
+          <div class="actions"><button class="primary" data-open="candidate">审核待审核的</button><button data-open="accepted">查看已确认</button></div></div>
       </div>
-      <div class="actions"><button id="d-build">导入结果并生成档案</button></div>
-    </div>
-  </div>
-  <div class="panel memcard" id="web-flow" style="display:none;margin-top:12px">
-    <div class="row"><b>网页版 AI：逐批复制粘贴</b><span class="note" id="w-count"></span></div>
-    <div class="note">1. 复制第一批，粘贴到 ChatGPT 或 Claude 网页的新对话；2. 把它回复的 JSON 整段复制回下面的框；3. 点“提交这一批”，再做下一批。全部提交后点上面的“导入结果并生成档案”。</div>
-    <div class="actions"><select id="w-batch" style="font:inherit;padding:7px;border-radius:8px;border:1px solid var(--line);background:var(--soft);color:var(--fg)"></select>
-      <button class="primary" id="w-copy">复制这一批</button><button id="w-chatgpt">打开 ChatGPT</button><button id="w-claude">打开 Claude</button></div>
-    <textarea id="w-reply" rows="6" placeholder="把 AI 的回复粘贴到这里" style="font:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--soft);color:var(--fg);width:100%"></textarea>
-    <div class="actions"><button class="primary" id="w-submit">提交这一批</button></div>
-  </div>
+    </section>
 
-  <h2>ChatGPT 官方导出</h2>
-  <p class="sub">ChatGPT 对单个对话的读取有限速，对话很多时扩展同步会很慢。官方导出一次拿到全部：ChatGPT 把下载链接发到你的邮箱，下载后 ctxport 会自动认出“下载”文件夹里的导出包并导入，与扩展已同步的部分自动去重。</p>
-  <div class="grid">
-    <div class="panel card"><div class="top"><span class="name">ChatGPT</span><span class="badge">需要浏览器扩展</span></div>
-      <div class="meta">在你已登录的 ChatGPT 页面里替你点“导出数据”。</div>
-      <div class="actions"><button class="primary" id="x-request">一键发起官方导出</button></div></div>
-    <div class="panel card"><div class="top"><span class="name">下载文件夹</span><span class="badge">ChatGPT / Claude.ai</span></div>
-      <div class="meta">下载好官方导出 zip 后点这里，或下次同步时会自动导入。</div>
-      <div class="actions"><button id="x-import">检查下载文件夹并导入</button></div></div>
-  </div>
-
-  <h2>网页同步的记录</h2>
-  <p class="sub">浏览器扩展一条条读回来的对话。改用官方导出后可以在这里一键删除，同时停止该网站的网页同步，免得扩展又读回来。官方导出包导入的对话、你已确认或拒绝的记忆都会保留。</p>
-  <div class="grid" id="webdata"></div>
-
-  <h2>编程 Agent</h2>
-  <p class="sub">把已确认的记忆写进它们的指令文件。只改 ctxport 自己那一块，你原来写的内容不动，第一次写入前自动备份。</p>
-  <div class="grid" id="agents"></div>
-
-  <h2>给 Agent 接上 MCP</h2>
-  <p class="sub">接上之后，这些工具可以随时搜索你在所有 AI 里的全部历史对话，而不只是一份摘要。</p>
-  <div class="grid" id="mcp"></div>
-
-  <h2>网页版 AI 的记忆</h2>
-  <p class="sub">通过 ctxport 浏览器扩展，在你已登录的网页里直接写入；没有装扩展时，会复制文本并打开对应页面让你粘贴。</p>
-  <div class="grid" id="web"></div>
-
-  <h2>桌面聊天应用</h2>
-  <p class="sub">生成导入文件、在访达里定位并打开应用。ctxport 不会直接改动这些应用的数据库。</p>
-  <div class="grid" id="apps"></div>
-</main>
+    <!-- ===================================================== 4 export -->
+    <section class="step" id="step-4">
+      <div class="shead" id="sh-4"><span class="n">4</span><div>
+        <h2>导入到其他 AI <span class="badge" id="sb-4"></span></h2>
+        <p>选你在用的 AI，点一下。之后档案更新了，回来再点一次“更新”即可。</p>
+      </div></div>
+      <div class="panel form" id="size-card">
+        <div class="field"><label>导入哪个版本</label><div>
+          <div class="seg" id="f-size"><button data-v="compact">精简（推荐）</button><button data-v="standard">标准</button><button data-v="full">完整</button></div>
+          <div class="help" id="f-size-help"></div></div></div>
+      </div>
+      <h3>编程 Agent</h3>
+      <p class="sub">写进它们的指令文件（如 ~/.claude/CLAUDE.md）。只改 ctxport 自己那一块，你原来写的内容不动，第一次写入前自动备份。</p>
+      <div class="grid" id="agents"></div>
+      <h3>让 Agent 能搜索全部历史（MCP）</h3>
+      <p class="sub">档案是摘要；接上 MCP 后，Agent 遇到需要时还能搜你在所有 AI 里的原始对话。连接后需要重启对应的应用。</p>
+      <div class="grid" id="mcp"></div>
+      <h3>网页版 AI</h3>
+      <p class="sub">装了 ctxport 浏览器扩展会直接写进去；没装时会复制好文本并打开对应页面，你粘贴保存即可。</p>
+      <div class="grid" id="web"></div>
+      <h3>桌面聊天应用</h3>
+      <p class="sub">生成导入文件并在访达里定位。ctxport 不会直接改这些应用的数据库。</p>
+      <div class="grid" id="apps"></div>
+    </section>
+  </main>
+</div>
 
 <div class="drawer" id="drawer">
   <div class="sheet">
-    <header><div class="bar"><b id="dr-title">记忆</b>
-      <div class="chips"><input type="text" id="dr-search" placeholder="搜索记忆…" style="width:200px">
-      <button class="ghost" id="dr-close">关闭</button></div></div></header>
-    <div class="tabs">
+    <div class="bar"><b id="dr-title">记忆</b>
+      <div class="chips"><input type="text" id="dr-search" placeholder="搜索…" style="width:200px">
+      <button class="ghost" id="dr-close">关闭</button></div></div>
+    <div class="tabs" id="dr-tabs">
       <button data-tab="candidate">待审核</button>
       <button data-tab="accepted">已确认</button>
       <span style="flex:1"></span>
       <button id="dr-all-acc" title="把下面列出的全部标为已确认">全部保留</button>
       <button id="dr-all-rej" title="把下面列出的全部标为不要">全部不要</button>
     </div>
+    <div class="tabs" id="dr-sizes" hidden>
+      <button data-psize="compact">精简</button><button data-psize="standard">标准</button><button data-psize="full">完整</button>
+    </div>
+    <div class="dr-help" id="dr-help"></div>
     <div class="list" id="dr-list"></div>
   </div>
 </div>
@@ -210,7 +419,12 @@
 <script>
 "use strict";
 const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("ctxport-" + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("ctxport-" + k, JSON.stringify(v)); } catch { /* private mode */ } },
+};
 
 // The launch token travels in the URL fragment (never sent to any server) and is kept for this tab only.
 (function takeToken() {
@@ -236,7 +450,7 @@ function toast(msg, err) {
   t.textContent = msg;
   t.className = "toast show" + (err ? " err" : "");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.className = "toast"), err ? 6000 : 3200);
+  toastTimer = setTimeout(() => (t.className = "toast"), err ? 6000 : 3600);
 }
 
 async function run(btn, fn) {
@@ -272,27 +486,93 @@ function paintExt() {
 window.postMessage({ source: "ctxport-app", action: "hello" }, location.origin);
 setTimeout(paintExt, 1200);
 
-// ------------------------------------------------------------ rendering
+// ------------------------------------------------------------ state shared by the guide
+const S = { convs: 0, accepted: 0, candidate: 0, profile: false, profileChars: 0, exported: 0, running: false,
+  pending: null, halted: "", size: "compact", sizes: {}, cov: {} };
+const SIZE_LABEL = { compact: "精简", standard: "标准", full: "完整" };
+const approxTok = (chars) => Math.round(chars * 0.65);
+function paintSize() {
+  $$("#f-size button").forEach((b) => {
+    const n = S.sizes[b.dataset.v];
+    b.classList.toggle("on", b.dataset.v === S.size);
+    b.textContent = SIZE_LABEL[b.dataset.v] + (b.dataset.v === "compact" ? "（推荐）" : "")
+      + (n ? ` · ${fmt(n)} 字` : "");
+  });
+  const n = S.sizes[S.size] || 0, cov = S.cov[S.size];
+  $("#size-card").hidden = !S.profile;
+  $("#f-size-help").innerHTML = !S.profile ? "" :
+    `这个版本约 <b>${fmt(n)}</b> 字、约 <b>${fmtTok(approxTok(n))}</b> token，`
+    + (S.size === "full" ? "包含全部内容。" : `包含档案里 <b>${cov == null ? "–" : Math.round(cov * 100) + "%"}</b> 的条目，每个类别都选了最重要的。`)
+    + `编程 Agent 每开一个新对话都会读一遍它，所以越短越省额度。`
+    + (S.size === "full" ? `<br><b>完整版很长</b>，会明显增加每次对话的消耗，Codex 还可能截掉后面的部分。`
+      : `<br>没写进来的细节不会丢：在下面“让 Agent 能搜索全部历史”里接上 MCP，Agent 需要时会用 search_memory 查完整档案。`);
+}
+$("#f-size").onclick = (e) => {
+  const b = e.target.closest("[data-v]"); if (!b) return;
+  S.size = b.dataset.v; paintSize();
+  api("/api/prefs", { profile_size: S.size }).catch((err) => toast(err.message, true));
+};
 const fmt = (n) => Number(n || 0).toLocaleString("zh-CN");
 const PLATFORM = { "chatgpt": "ChatGPT", "claude-ai": "Claude.ai", "claude-code": "Claude Code", "codex": "Codex",
   "gemini-cli": "Gemini CLI", "gemini-web": "Gemini", "antigravity": "Antigravity", "cherry-studio": "Cherry Studio",
   "chatbox": "Chatbox", "openai-messages": "其他", "ctxport-jsonl": "ctxport" };
 
+function paintGuide() {
+  const done = { 1: S.convs > 0, 2: S.profile, 3: false, 4: S.exported > 0 };
+  const sub = {
+    1: S.convs ? `${fmt(S.convs)} 个对话` : "还没有对话",
+    2: S.running ? "提炼中…" : S.profile ? `档案 ${fmt(S.profileChars)} 字${S.pending ? ` · 还剩 ${fmt(S.pending)} 个对话` : ""}` : "还没有档案",
+    3: S.profile ? "可选：导入前看一眼" : S.candidate ? `可选：${fmt(S.candidate)} 条待审核` : "可选",
+    4: S.exported ? `已导入 ${S.exported} 处` : "还没有导入",
+  };
+  let cur = !done[1] ? 1 : !done[2] ? 2 : !done[4] ? 4 : 0;
+  if (S.running) cur = 2;
+  for (const i of [1, 2, 3, 4]) {
+    const a = $(`nav.steps a[data-step="${i}"]`);
+    a.classList.toggle("done", done[i]);
+    a.classList.toggle("cur", i === cur);
+    $("#ns-" + i).textContent = sub[i];
+    $("#sh-" + i).classList.toggle("done", done[i]);
+    const b = $("#sb-" + i);
+    b.textContent = done[i] ? "已完成" : i === cur ? "下一步" : i === 3 ? "可选" : "";
+    b.className = "badge " + (done[i] ? "ok" : i === cur ? "acc" : "");
+    b.hidden = !b.textContent;
+  }
+  const NEXT = {
+    1: ["收集聊天记录", "先把聊天记录汇总到本机。网页版 ChatGPT / Claude 用官方导出，本机的 Agent 会自动读取。"],
+    2: ["提炼记忆档案", `已经有 ${fmt(S.convs)} 个对话。选一个模型，先试最近 50 个对话，看看效果再扩大范围。`],
+    4: ["导入到其他 AI", S.pending
+      ? `档案已经可以用了（还有 ${fmt(S.pending)} 个对话没提炼，之后可以继续补）。选你在用的 AI，一键写进去；导入前也可以先在第 3 步看一眼档案。`
+      : "档案已经准备好。选你在用的 AI，一键写进去；导入前也可以先在第 3 步看一眼档案。"],
+    0: ["全部完成", "以后有了新对话：回到第 1 步导入，第 2 步只会处理新增的对话，再在第 4 步点“更新”。"],
+  };
+  if (S.running) NEXT[2] = ["正在提炼…", "可以离开这个页面，提炼在后台继续；回来能看到进度。"];
+  const [t, why] = NEXT[cur];
+  $("#next-title").textContent = t;
+  $("#next-why").textContent = why;
+  $("#next-go").hidden = cur === 0;
+  $("#next-go").onclick = () => document.getElementById("step-" + cur).scrollIntoView();
+}
+
 async function loadOverview() {
   const o = await api("/api/overview");
   const plats = Object.entries(o.platforms || {});
-  $("#s-convs").textContent = fmt(plats.reduce((a, [, d]) => a + (d.conversations || 0), 0));
+  S.convs = plats.reduce((a, [, d]) => a + (d.conversations || 0), 0);
+  $("#s-convs").textContent = fmt(S.convs);
   $("#s-msgs").textContent = fmt(plats.reduce((a, [, d]) => a + (d.messages || 0), 0));
   $("#s-plats").textContent = plats.length;
   $("#plats").innerHTML = plats.map(([p, d]) => `<span>${esc(PLATFORM[p] || p)} · ${fmt(d.conversations)}</span>`).join("");
-  $("#m-acc").textContent = fmt(o.memories.accepted);
-  $("#m-cand").textContent = fmt(o.memories.candidate);
+  S.accepted = o.memories.accepted; S.candidate = o.memories.candidate;
+  $("#m-acc").textContent = fmt(S.accepted);
+  $("#m-cand").textContent = fmt(S.candidate);
   $("#chip-ver").textContent = "v" + o.version;
   const r = $("#chip-recv");
   r.querySelector(".dot").className = "dot " + (o.receiver.running ? "ok" : "off");
   r.lastElementChild.textContent = o.receiver.running ? "接收服务运行中" : "接收服务未运行";
+  paintGuide();
 }
 
+// ------------------------------------------------------------ step 4 cards
 function agentCard(a) {
   const status = a.imported ? `<span class="badge ok">已导入</span>` : (a.exists === false && a.installed === false
     ? `<span class="badge">未安装</span>` : `<span class="badge warn">未导入</span>`);
@@ -306,7 +586,6 @@ function agentCard(a) {
     <div class="meta">${esc(a.path)}</div>
     <div class="actions"><button class="primary" data-agent="${esc(a.key)}">${a.imported ? "更新" : "一键导入"}</button></div></div>`;
 }
-
 function mcpCard(m) {
   const status = m.connected ? `<span class="badge ok">已连接</span>` : (m.installed ? `<span class="badge warn">未连接</span>`
     : `<span class="badge">未检测到</span>`);
@@ -316,14 +595,12 @@ function mcpCard(m) {
       ? `<button data-mcp-off="${esc(m.key)}">断开</button><button data-mcp="${esc(m.key)}">重新连接</button>`
       : `<button class="primary" data-mcp="${esc(m.key)}">一键连接</button>`}</div></div>`;
 }
-
 function webCard(w) {
   return `<div class="panel card"><div class="top"><span class="name">${esc(w.label)}</span><span class="badge">${esc(w.where)}</span></div>
-    <div class="meta">${w.limit ? `限 ${w.limit} 字，会自动挑最重要的记忆` : "写入全部已确认记忆"}</div>
+    <div class="meta">${w.limit ? `限 ${w.limit} 字，会自动挑最重要的内容` : S.profile ? "写入上面选的档案版本" : "写入全部已确认记忆"}</div>
     <div class="actions"><button class="primary" data-web="${esc(w.key)}">一键写入</button>
     <button data-copy-open="${esc(w.key)}" data-url="${esc(w.url)}">复制并打开网页</button></div></div>`;
 }
-
 function appCard(a) {
   return `<div class="panel card"><div class="top"><span class="name">${esc(a.label)}</span>
     ${a.installed ? `<span class="badge ok">已安装</span>` : `<span class="badge">未检测到</span>`}</div>
@@ -331,19 +608,27 @@ function appCard(a) {
     <div class="actions"><button class="primary" data-app="${esc(a.key)}">生成并打开</button>
     ${a.key === "cherry-studio" ? `<button data-copy="cherry-studio">复制提示词</button>` : ""}</div></div>`;
 }
-
 async function loadTargets() {
   const t = await api("/api/targets");
   $("#agents").innerHTML = t.agents.map(agentCard).join("");
   $("#mcp").innerHTML = t.mcp.map(mcpCard).join("");
   $("#web").innerHTML = t.web.map(webCard).join("");
   $("#apps").innerHTML = t.apps.map(appCard).join("");
+  S.exported = t.agents.filter((a) => a.imported).length + t.mcp.filter((m) => m.connected).length;
+  paintGuide();
 }
-
 async function copyText(target) {
-  const { text } = await api("/api/text?target=" + encodeURIComponent(target));
+  const { text } = await api("/api/text?target=" + encodeURIComponent(target) + "&size=" + S.size);
   await navigator.clipboard.writeText(text);
   return text;
+}
+async function importDownloads() {
+  const r = await api("/api/import-downloads", {});
+  const c = r.chatgpt, a = r["claude-ai"];
+  toast(c.zips || a.zips ? `找到 ChatGPT 导出包 ${c.zips} 个、Claude.ai ${a.zips} 个，导入 ${fmt(c.conversations + a.conversations)} 个对话`
+    : "下载文件夹里还没有官方导出包。下载好 zip（不用解压）后再点一次。");
+  await loadOverview();
+  refreshPreview();
 }
 
 document.addEventListener("click", (ev) => {
@@ -352,14 +637,14 @@ document.addEventListener("click", (ev) => {
   const d = b.dataset;
   if (d.agent) run(b, async () => {
     const project = d.agent === "cursor" ? (b.closest(".card").querySelector("[data-project]").value || "").trim() : undefined;
-    const r = await api("/api/agent/apply", { key: d.agent, project });
+    const r = await api("/api/agent/apply", { key: d.agent, project, size: S.size });
     const a = (r.applied || [])[0] || {};
-    toast(`已写入 ${a.path || ""}${a.backup ? "\n原文件备份：" + a.backup : ""}`);
+    toast(`已写入${S.profile ? SIZE_LABEL[S.size] + "版档案" : ""}：${a.path || ""}${a.backup ? "\n原文件备份：" + a.backup : ""}`);
     loadTargets();
   });
   else if (d.mcp) run(b, async () => {
     const r = await api("/api/mcp/connect", { key: d.mcp });
-    toast(`已连接：${r.path}${r.backup ? "\n原配置备份：" + r.backup : ""}`);
+    toast(`已连接：${r.path}${r.backup ? "\n原配置备份：" + r.backup : ""}\n重启这个应用后生效。`);
     loadTargets();
   });
   else if (d.mcpOff) run(b, async () => { await api("/api/mcp/disconnect", { key: d.mcpOff }); toast("已断开"); loadTargets(); });
@@ -385,140 +670,32 @@ document.addEventListener("click", (ev) => {
     const r = await api("/api/app/export", { key: d.app });
     toast(`已生成：${(r.files || []).join("\n")}\n${r.instructions || ""}`);
   });
+  else if ("importDl" in d) run(b, importDownloads);
+  else if (d.goto) document.getElementById("step-" + d.goto).scrollIntoView();
+  else if ("continue" in d) {
+    setMethod("agent"); $("#f-limit").value = ""; remember(); refreshPreview();
+    document.getElementById("m-agent").scrollIntoView({ block: "center" });
+    toast("范围已设为“全部对话”，已有卡片的会跳过。确认设置后点“开始提炼”。");
+  }
+  else if ("viewProfile" in d) openProfile();
   else if (d.open) openDrawer(d.open);
   else if (d.tab) loadDrawer(d.tab);
 });
 
-// ------------------------------------------------------------ memory review
-let drTab = "candidate", drRows = [];
-function openDrawer(tab) { $("#drawer").classList.add("open"); loadDrawer(tab); }
-$("#dr-close").onclick = () => { $("#drawer").classList.remove("open"); loadOverview(); };
-$("#drawer").onclick = (e) => { if (e.target.id === "drawer") $("#dr-close").onclick(); };
-$("#dr-search").oninput = () => paintDrawer();
-async function loadDrawer(tab) {
-  drTab = tab;
-  document.querySelectorAll(".tabs [data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
-  $("#dr-title").textContent = tab === "candidate" ? "待审核的记忆" : "已确认的记忆";
-  $("#dr-list").innerHTML = `<div class="empty">加载中…</div>`;
-  drRows = (await api("/api/memories?status=" + tab)).memories;
-  paintDrawer();
-}
-function visibleRows() {
-  const q = $("#dr-search").value.trim().toLowerCase();
-  return q ? drRows.filter((m) => m.text.toLowerCase().includes(q)) : drRows;
-}
-function paintDrawer() {
-  const rows = visibleRows().slice(0, 400);
-  $("#dr-list").innerHTML = rows.length ? rows.map((m) => `<div class="mem" data-id="${esc(m.id)}">
-      <div><div class="t">${esc(m.text)}</div>
-      <div class="m">${esc(m.category)} · ${esc(PLATFORM[m.platform] || m.platform)}${m.seen > 1 ? ` · 出现 ${m.seen} 次` : ""}${m.scope !== "global" ? " · " + esc(m.scope) : ""}</div></div>
-      <div class="b">${drTab === "candidate" ? `<button data-keep>保留</button>` : ""}
-      <button data-edit>改</button><button class="ghost" data-drop>不要</button></div></div>`).join("")
-    : `<div class="empty">没有记忆</div>`;
-  document.querySelectorAll("#dr-list .mem").forEach((r) => {
-    const t = r.querySelector(".t");
-    if (t.scrollHeight > t.clientHeight + 2) r.classList.add("long");
-  });
-  if (visibleRows().length > 400) $("#dr-list").insertAdjacentHTML("beforeend", `<div class="empty">只显示前 400 条，用搜索缩小范围</div>`);
-}
-$("#dr-list").addEventListener("click", async (ev) => {
-  const row = ev.target.closest(".mem");
-  if (!row) return;
-  const id = row.dataset.id;
-  const t = row.querySelector(".t");
-  if (ev.target === t && !t.isContentEditable) { if (row.classList.contains("long")) row.classList.toggle("open"); return; }
-  try {
-    if (ev.target.matches("[data-keep]")) { await api("/api/memories/update", { id, status: "accepted" }); row.remove(); drRows = drRows.filter((m) => m.id !== id); }
-    else if (ev.target.matches("[data-drop]")) { await api("/api/memories/update", { id, status: "rejected" }); row.remove(); drRows = drRows.filter((m) => m.id !== id); }
-    else if (ev.target.matches("[data-edit]")) {
-      if (t.isContentEditable) {
-        await api("/api/memories/update", { id, text: t.innerText.trim(), status: "accepted" });
-        t.contentEditable = "false"; ev.target.textContent = "改"; toast("已保存并确认");
-      } else { t.contentEditable = "true"; t.focus(); ev.target.textContent = "存"; }
-    }
-  } catch (e) { toast(e.message, true); }
-});
-async function bulk(status) {
-  const ids = visibleRows().map((m) => m.id);
-  if (!ids.length) return;
-  if (!confirm(`把列出的 ${ids.length} 条记忆全部标为“${status === "accepted" ? "已确认" : "不要"}”？`)) return;
-  await api("/api/memories/update", { ids, status });
-  toast(`已处理 ${ids.length} 条`);
-  loadDrawer(drTab);
-}
-$("#dr-all-acc").onclick = () => bulk("accepted").catch((e) => toast(e.message, true));
-$("#dr-all-rej").onclick = () => bulk("rejected").catch((e) => toast(e.message, true));
-
-// ------------------------------------------------------------ distillation (no API key: the user's own AI)
-const AGENT_LABEL = { "claude-code": "Claude Code", "codex": "Codex" };
-async function loadAgents() {
-  const o = await api("/api/distill/options");
-  $("#agent-btns").innerHTML = o.agents.length
-    ? o.agents.map((a) => `<button class="primary" data-run-agent="${esc(a)}">用 ${esc(AGENT_LABEL[a] || a)} 一键提炼</button>`).join("")
-    : `<span class="note">没有检测到 Claude Code / Codex 命令行，可以用下面两种方式。</span>`;
-}
-document.addEventListener("click", (ev) => {
-  const b = ev.target.closest("[data-run-agent]");
-  if (!b) return;
-  const agent = b.dataset.runAgent;
-  run(b, async () => {
-    if (!confirm(`用你自己的 ${AGENT_LABEL[agent] || agent} 逐批处理还没有情节卡的对话？会消耗你在该产品里的使用额度，可能需要较长时间；中途停止后再点会接着做。`)) return;
-    await api("/api/distill/agent", { agent, confirm: true });
-    setTimeout(loadDistill, 800);
-  });
-});
-$("#d-folder").onclick = () => run($("#d-folder"), async () => {
-  const r = await api("/api/distill/folder", {});
-  toast(`任务文件夹已打开（${r.conversations} 个对话待处理）。在任意 Agent 里打开这个文件夹，说：“按 TASK.md 处理 conversations/ 里还没有卡片的文件”。做完后点“导入结果并生成档案”。`);
-});
-$("#d-build").onclick = () => run($("#d-build"), async () => { await api("/api/distill/build", {}); setTimeout(loadDistill, 800); });
-$("#w-open").onclick = () => run($("#w-open"), async () => {
-  const r = await api("/api/distill/web?limit=" + encodeURIComponent($("#w-limit").value));
-  $("#web-flow").style.display = "flex";
-  $("#w-count").textContent = r.batches.length ? `共 ${r.batches.length} 批` : "没有需要处理的对话";
-  $("#w-batch").innerHTML = r.batches.map((b) => `<option value="${esc(b.name)}">第 ${parseInt(b.name)} 批（${fmt(b.chars)} 字）</option>`).join("");
-  $("#web-flow").scrollIntoView({ behavior: "smooth", block: "center" });
-});
-$("#w-copy").onclick = () => run($("#w-copy"), async () => {
-  const { text } = await api("/api/distill/web/prompt?name=" + encodeURIComponent($("#w-batch").value));
-  await navigator.clipboard.writeText(text);
-  toast("已复制，粘贴到网页版 AI 的新对话里");
-});
-$("#w-chatgpt").onclick = () => api("/api/open-url", { url: "https://chatgpt.com/" }).catch((e) => toast(e.message, true));
-$("#w-claude").onclick = () => api("/api/open-url", { url: "https://claude.ai/new" }).catch((e) => toast(e.message, true));
-$("#w-submit").onclick = () => run($("#w-submit"), async () => {
-  const r = await api("/api/distill/web/answer", { name: $("#w-batch").value, reply: $("#w-reply").value });
-  toast(`已导入 ${r.cards} 张情节卡`);
-  $("#w-reply").value = "";
-  const sel = $("#w-batch");
-  if (sel.selectedIndex < sel.options.length - 1) sel.selectedIndex += 1;
-});
-const pct = (x) => (x == null ? "–" : Math.round(x * 100) + "%");
-async function loadDistill() {
-  const st = await api("/api/distill/status");
-  const lr = st.last_run;
-  $("#d-status").innerHTML = st.profile_exists
-    ? `已生成：<b>${fmt(st.profile_chars)}</b> 字 · 完整版覆盖率 <b>${pct(lr && lr.coverage.full)}</b> · ChatGPT 精简版覆盖 ${pct(lr && lr.coverage.chatgpt_1400)}<br>` +
-      (lr ? `${fmt(lr.conversations)} 个对话 · ${fmt(lr.facts_l1)} 条事实 → ${fmt(lr.facts_l2)} 条合并后` : "")
-    : "还没有生成。";
-  $("#d-run").textContent = lr ? `上次：${lr.model || "无模型"}` : "";
-  $("#d-lines").textContent = (st.lines || []).join("\n") + (st.error ? "\n错误：" + st.error : "");
-  $("#d-hint").textContent = st.running ? "提炼中…" : "用右边任意一种方式生成情节卡";
-  if (st.running) setTimeout(loadDistill, 3000);
-  else if (st.result) { loadOverview(); }
-}
+// ------------------------------------------------------------ step 1
 $("#x-request").onclick = () => run($("#x-request"), async () => {
-  if (!extReady) throw new Error("没有检测到浏览器扩展：请在 ChatGPT 网页 设置 → 数据管理 → 导出数据 手动发起");
+  if (!extReady) {
+    await api("/api/open-url", { url: "https://chatgpt.com/#settings/DataControls" });
+    toast("已打开 ChatGPT 设置：在“数据管理”里点“导出数据”，再确认导出。");
+    return;
+  }
   const r = await askExtension("request-export");
   if (!r.ok) throw new Error(r.error || "发起失败");
   toast(r.message || "已发起，请查收邮件");
 });
-$("#x-import").onclick = () => run($("#x-import"), async () => {
-  const r = await api("/api/import-downloads", {});
-  const c = r.chatgpt, a = r["claude-ai"];
-  toast(c.zips || a.zips ? `找到 ChatGPT 导出包 ${c.zips} 个、Claude.ai ${a.zips} 个，导入 ${c.conversations + a.conversations} 个对话`
-    : "下载文件夹里还没有官方导出包");
-  loadOverview();
+$("#x-claude").onclick = () => run($("#x-claude"), async () => {
+  await api("/api/open-url", { url: "https://claude.ai/settings/data-privacy-controls" });
+  toast("已打开 Claude 设置：点“导出数据”，邮件到了以后下载 zip。");
 });
 
 const SITE_NAMES = { chatgpt: "ChatGPT", "claude-ai": "Claude.ai", "gemini-web": "Gemini 网页版" };
@@ -552,9 +729,380 @@ async function loadWebData() {
   }));
 }
 
+// ------------------------------------------------------------ step 2: distillation
+const AGENT_LABEL = { "claude-code": "Claude Code", "codex": "Codex" };
+const EFFORT_LABEL = { "": "默认", minimal: "最低", low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" };
+let OPT = { agents: [], choices: {} };
+const F = store.get("distill", {});   // remembered choices per agent: {agent, models: {agent: m}, efforts: {agent: e}, limit}
+F.models = F.models || {}; F.efforts = F.efforts || {};
+
+function setMethod(m) {
+  $$("#mtabs button").forEach((b) => b.classList.toggle("on", b.dataset.m === m));
+  for (const k of ["agent", "web", "folder"]) $("#m-" + k).hidden = k !== m;
+  store.set("method", m);
+}
+$("#mtabs").onclick = (e) => { const b = e.target.closest("[data-m]"); if (b) setMethod(b.dataset.m); };
+
+function curAgent() { return $("#f-agent .on")?.dataset.v || OPT.agents[0]; }
+function paintAgentForm() {
+  const agent = curAgent();
+  const ch = OPT.choices[agent] || { models: [], efforts: [], recommended: {} };
+  const model = F.models[agent] ?? ch.recommended.model ?? "";
+  const known = ch.models.some((m) => m.value === model);
+  $("#f-model").innerHTML = ch.models.map((m) => `<option value="${esc(m.value)}">${esc(m.label)}</option>`).join("")
+    + `<option value="__custom">其他模型（自己填名字）…</option>`;
+  $("#f-model").value = known ? model : "__custom";
+  $("#f-model-custom").hidden = known;
+  $("#f-model-custom").value = known ? "" : model;
+  $("#f-model-custom").placeholder = agent === "codex" ? "Codex 的模型名" : "完整模型名或别名";
+  $("#f-model-help").textContent = agent === "codex"
+    ? "列表来自你本机 Codex 的模型列表。写情节卡主要是把事实摘出来，不需要最强的模型。"
+    : "写情节卡主要是把事实摘出来，中等模型通常就够了。";
+  const path = (OPT.paths || {})[agent] || "";
+  $("#f-agent-help").textContent = (agent === "codex" && path.includes("ChatGPT.app") ? "使用 ChatGPT 桌面应用自带的 Codex。" : "")
+    + "用你在这个产品里已登录的账号和订阅额度，后台自动运行；不会在它的历史记录里留下这些运行。";
+  paintEfforts();
+  paintFallback();
+}
+function paintEfforts() {
+  const agent = curAgent();
+  const ch = OPT.choices[agent] || { models: [], efforts: [], recommended: {} };
+  const sel = $("#f-model").value;
+  const m = ch.models.find((x) => x.value === sel);
+  const efforts = m && m.efforts && m.efforts.length ? m.efforts : ch.efforts;
+  let effort = F.efforts[agent] ?? ch.recommended.effort ?? "";
+  if (effort && !efforts.includes(effort)) effort = "";
+  $("#f-effort").innerHTML = ["", ...efforts].map((e) =>
+    `<button data-v="${esc(e)}" class="${e === effort ? "on" : ""}">${esc(EFFORT_LABEL[e] || e)}${e === ch.recommended.effort ? " ★" : ""}</button>`).join("");
+}
+function curMode() { return $("#f-mode .on")?.dataset.v || "direct"; }
+function paintMode() {
+  const m = F.mode === "agent" ? "agent" : "direct";
+  $$("#f-mode button").forEach((b) => b.classList.toggle("on", b.dataset.v === m));
+  $("#f-mode-help").textContent = m === "direct"
+    ? "ctxport 先把对话压缩（代码只留“是干什么的”，长段翻译只留开头），几个对话打包成一次提问，直接拿回卡片。实测每个对话约 1–2 千 token。"
+    : "让 Agent 自己逐个读文件、写卡片，读得最全，但它每一步都会把之前的内容重发一遍，实测每个对话约 1.8 万 token，贵十倍以上。";
+}
+$("#f-mode").onclick = (e) => {
+  const b = e.target.closest("[data-v]"); if (!b) return;
+  F.mode = b.dataset.v; store.set("distill", F); paintMode(); refreshPreview();
+};
+function otherAgent() { return OPT.agents.find((a) => a !== curAgent()); }
+function fallbackChoice() {
+  const a = otherAgent();
+  if (!a) return null;
+  const ch = OPT.choices[a] || { recommended: {} };
+  return { agent: a, model: F.models[a] ?? ch.recommended.model ?? "", effort: F.efforts[a] ?? ch.recommended.effort ?? "" };
+}
+function paintFallback() {
+  const fb = fallbackChoice();
+  $("#f-fb-row").hidden = !fb;
+  if (fb) {
+    const ch = OPT.choices[fb.agent];
+    const m = (ch.models.find((x) => x.value === fb.model) || {}).label || fb.model || "默认模型";
+    $("#f-fb-label").textContent = `换成 ${AGENT_LABEL[fb.agent] || fb.agent} 接着跑（${m.split("：")[0]}${fb.effort ? " · " + fb.effort : ""}；在“用哪个”里切过去可以改它的模型）`;
+  }
+  $("#f-fb").checked = !!fb && !!F.fallback;
+  $("#f-wait").checked = !!F.wait;
+}
+function formValues() {
+  const agent = curAgent();
+  const sel = $("#f-model").value;
+  return { agent, model: sel === "__custom" ? $("#f-model-custom").value.trim() : sel,
+    effort: $("#f-effort .on")?.dataset.v ?? "", limit: $("#f-limit").value,
+    parallel: Number($("#f-par .on")?.dataset.v || 4), mode: curMode(),
+    fallback: $("#f-fb").checked ? fallbackChoice() : null, wait: $("#f-wait").checked };
+}
+function remember() {
+  const v = formValues();
+  F.agent = v.agent; F.models[v.agent] = v.model; F.efforts[v.agent] = v.effort; F.limit = v.limit; F.parallel = v.parallel; F.mode = v.mode;
+  F.fallback = $("#f-fb").checked; F.wait = $("#f-wait").checked;
+  store.set("distill", F);
+}
+async function loadAgents() {
+  OPT = await api("/api/distill/options");
+  $("#agent-missing").hidden = OPT.agents.length > 0;
+  $$("#m-agent .field, #f-preview, #f-start").forEach((el) => el.hidden = !OPT.agents.length);
+  const a = OPT.agents.includes(F.agent) ? F.agent : OPT.agents[0];
+  $("#f-agent").innerHTML = OPT.agents.map((x) => `<button data-v="${esc(x)}" class="${x === a ? "on" : ""}">${esc(AGENT_LABEL[x] || x)}</button>`).join("");
+  if (F.limit !== undefined) $("#f-limit").value = F.limit;
+  paintMode();
+  $$("#f-par button").forEach((b) => b.classList.toggle("on", Number(b.dataset.v) === (F.parallel || 4)));
+  if (OPT.agents.length) paintAgentForm();
+  setMethod(store.get("method", OPT.agents.length ? "agent" : "web"));
+  refreshPreview();
+}
+$("#f-agent").onclick = (e) => {
+  const b = e.target.closest("[data-v]"); if (!b) return;
+  $$("#f-agent button").forEach((x) => x.classList.toggle("on", x === b));
+  F.agent = b.dataset.v; store.set("distill", F); paintAgentForm(); refreshPreview();
+};
+$("#f-effort").onclick = (e) => {
+  const b = e.target.closest("[data-v]"); if (!b) return;
+  $$("#f-effort button").forEach((x) => x.classList.toggle("on", x === b)); remember(); refreshPreview();
+};
+$("#f-model").onchange = () => {
+  $("#f-model-custom").hidden = $("#f-model").value !== "__custom";
+  if (!$("#f-model-custom").hidden) $("#f-model-custom").focus();
+  paintEfforts(); remember(); refreshPreview();
+};
+let customTimer;
+$("#f-model-custom").oninput = () => { remember(); clearTimeout(customTimer); customTimer = setTimeout(refreshPreview, 500); };
+$("#f-limit").onchange = () => { remember(); refreshPreview(); };
+$("#f-fb").onchange = remember;
+$("#f-wait").onchange = remember;
+$("#f-par").onclick = (e) => {
+  const b = e.target.closest("[data-v]"); if (!b) return;
+  $$("#f-par button").forEach((x) => x.classList.toggle("on", x === b)); remember(); refreshPreview();
+};
+
+const fmtTok = (n) => n >= 1e8 ? (n / 1e8).toFixed(1) + " 亿" : n >= 1e4 ? (n / 1e4).toFixed(n >= 1e5 ? 0 : 1) + " 万" : fmt(Math.round(n));
+let previewSeq = 0;
+async function refreshPreview() {
+  if (!OPT.agents.length) return;
+  const seq = ++previewSeq;
+  const v = formValues();
+  $("#f-preview").textContent = "计算中…";
+  try {
+    const q = new URLSearchParams({ limit: v.limit, agent: v.agent || "", model: v.model, effort: v.effort, mode: v.mode });
+    const p = await api("/api/distill/preview?" + q);
+    if (seq !== previewSeq) return;
+    if (!p.conversations) {
+      $("#f-preview").innerHTML = `这个范围里的对话都已经有情节卡了。${p.cards ? "可以扩大范围，或直接点“生成档案”。" : ""}`;
+    } else {
+      const par = Math.min(v.parallel, p.batches);
+      const unit = v.mode === "agent" ? "批" : "组（每组一次提问）";
+      let html = `将处理 <b id="f-n">${fmt(p.conversations)}</b> 个对话，分 <b>${fmt(p.batches)}</b> ${unit}${par > 1 ? `，同时跑 ${par} 个` : ""}。`
+        + `<br>${v.mode === "agent" ? "对话内容" : "压缩后的内容"}约 <b>${fmtTok(p.tokens_in)}</b> token 输入、约 ${fmtTok(p.tokens_out)} token 输出（按字数估算）。`;
+      const m = p.measured;
+      if (m) {
+        const pr = m.projected;
+        const all = pr.input + pr.cache_read + pr.cache_write + pr.output;
+        html += `<br><b>按你之前 ${m.batches} ${v.mode === "agent" ? "批" : "组"}的实测</b>（${esc(m.model || "默认模型")}${m.effort ? " · " + esc(m.effort) : ""}），`
+          + `这次预计共约 <b>${fmtTok(all)}</b> token：新输入 ${fmtTok(pr.input + pr.cache_write)}、缓存读取 ${fmtTok(pr.cache_read)}、输出 ${fmtTok(pr.output)}。`;
+      } else {
+        html += v.mode === "agent"
+          ? `<br><span class="note">Agent 自己还有开销：系统提示，以及读写文件时每一步都带上的上下文（多数是便宜的缓存读取），实际计入额度的量通常是上面的几倍。跑完第一批后，这里会改成按实测预估。</span>`
+          : `<br><span class="note">每次提问还有一点固定开销（系统提示）。跑完第一组后，这里会改成按实测预估。</span>`;
+      }
+      if (p.cards) html += `<br><span class="note">已有 ${fmt(p.cards)} 张情节卡，内容没变的对话会跳过。</span>`;
+      $("#f-preview").innerHTML = html;
+    }
+    $("#f-start").disabled = !p.conversations || S.running;
+  } catch (e) { $("#f-preview").textContent = e.message; }
+}
+
+$("#f-start").onclick = () => run($("#f-start"), async () => {
+  const v = formValues();
+  if ($("#f-model").value === "__custom" && !v.model) throw new Error("请填写模型名，或选一个列表里的模型");
+  const name = AGENT_LABEL[v.agent] || v.agent;
+  if (!confirm(`用你自己的 ${name}${v.model ? `（${v.model}）` : ""}在后台处理 ${$("#f-n")?.textContent || ""} 个对话？\n\n`
+    + `会消耗你在 ${name} 里的使用额度${v.fallback ? `；额度用完后换成 ${AGENT_LABEL[v.fallback.agent]} 接着跑，也会消耗它的额度` : ""}`
+    + `${v.wait ? "；都用完了会等额度恢复后自动继续" : ""}。可以随时点“停止”，之后再点开始会接着做。`)) return;
+  remember();
+  await api("/api/distill/agent", { ...v, confirm: true });
+  S.running = true; paintRunning(); setTimeout(loadDistill, 600);
+});
+$("#f-stop").onclick = () => run($("#f-stop"), async () => { await api("/api/distill/stop", {}); toast("会在当前这一批结束前停下，已写好的卡片都会保留"); });
+
+function paintRunning(st) {
+  $("#f-stop").hidden = !S.running;
+  $("#f-start").disabled = S.running;
+  const pg = st && st.progress;
+  $("#f-progress").hidden = !S.running && !(pg && pg.total);
+  if (pg && pg.total) $("#f-progress i").style.width = Math.round(100 * pg.done / pg.total) + "%";
+  const u = st && st.usage;
+  const used = u ? `已用 ${fmtTok(u.input + u.cache_write)} 新输入 · ${fmtTok(u.cache_read)} 缓存读取 · ${fmtTok(u.output)} 输出` : "";
+  const waiting = st && st.waiting_until;
+  if (S.running && waiting) {
+    const at = new Date(waiting * 1000).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+    $("#f-state").textContent = `额度用完了，等到 ${at} 自动继续 · 电脑保持不睡眠`;
+    return;
+  }
+  const who = st && st.agent_now && OPT.agents.length > 1 ? (AGENT_LABEL[st.agent_now] || st.agent_now) + " · " : "";
+  $("#f-state").textContent = S.running ? who + (pg && pg.total ? `已完成 ${pg.done} / ${pg.total} 批` : "准备中…")
+    + (used ? " · " + used : "") : used ? "上次运行" + used : "";
+}
+
+$("#d-folder").onclick = () => run($("#d-folder"), async () => {
+  const r = await api("/api/distill/folder", {});
+  toast(`任务文件夹已打开（${r.conversations} 个对话待处理）。在 Agent 里打开它，说“按 TASK.md 处理 conversations/ 里还没有卡片的文件”。`);
+});
+$("#d-build").onclick = () => run($("#d-build"), async () => { await api("/api/distill/build", {}); S.running = true; paintGuide(); setTimeout(loadDistill, 600); });
+$("#d-view").onclick = () => openProfile();
+$("#r-reveal").onclick = () => run($("#r-reveal"), async () => {
+  await api("/api/distill/reveal", {});
+});
+$("#w-open").onclick = () => run($("#w-open"), async () => {
+  const r = await api("/api/distill/web?limit=" + encodeURIComponent($("#w-limit").value));
+  $("#web-flow").hidden = false;
+  $("#w-count").textContent = r.batches.length ? `共 ${r.batches.length} 批` : "没有需要处理的对话";
+  $("#w-batch").innerHTML = r.batches.map((b) => `<option value="${esc(b.name)}">第 ${parseInt(b.name)} 批（${fmt(b.chars)} 字）</option>`).join("");
+});
+$("#w-copy").onclick = () => run($("#w-copy"), async () => {
+  const { text } = await api("/api/distill/web/prompt?name=" + encodeURIComponent($("#w-batch").value));
+  await navigator.clipboard.writeText(text);
+  toast("已复制，粘贴到网页版 AI 的新对话里");
+});
+$("#w-chatgpt").onclick = () => api("/api/open-url", { url: "https://chatgpt.com/" }).catch((e) => toast(e.message, true));
+$("#w-claude").onclick = () => api("/api/open-url", { url: "https://claude.ai/new" }).catch((e) => toast(e.message, true));
+$("#w-submit").onclick = () => run($("#w-submit"), async () => {
+  const r = await api("/api/distill/web/answer", { name: $("#w-batch").value, reply: $("#w-reply").value });
+  toast(`已导入 ${r.cards} 张情节卡`);
+  $("#w-reply").value = "";
+  const sel = $("#w-batch");
+  if (sel.selectedIndex < sel.options.length - 1) sel.selectedIndex += 1;
+});
+
+const pct = (x) => (x == null ? "–" : Math.round(x * 100) + "%");
+let wasRunning = false;
+async function loadDistill() {
+  const st = await api("/api/distill/status");
+  const lr = st.last_run;
+  S.running = st.running; S.profile = st.profile_exists; S.profileChars = st.profile_chars; S.halted = st.halted || "";
+  S.sizes = st.sizes || {}; S.cov = (st.last_run && st.last_run.coverage) || {};
+  paintSize();
+  $("#d-status").innerHTML = st.profile_exists
+    ? `<div class="big">${fmt(st.profile_chars)} <span class="note">字</span></div>` +
+      (lr ? `来自 ${fmt((lr.cards_cached || 0) + (lr.cards_new || 0))} 张情节卡（共 ${fmt(lr.conversations)} 个对话）· ${fmt(lr.facts_l1)} 条事实，合并成 ${fmt(lr.facts_l2)} 条<br>完整版覆盖率 ${pct(lr.coverage.full)} · ChatGPT 精简版覆盖 ${pct(lr.coverage.chatgpt_1400)}` : "")
+    : "还没有档案。选好方式开始提炼，完成后会自动生成。";
+  $("#d-run").textContent = lr && lr.started ? "更新于 " + new Date(lr.started * 1000).toLocaleString("zh-CN") : "";
+  $("#d-lines").textContent = (st.lines || []).slice(-12).join("\n") + (st.error ? "\n错误：" + st.error : "");
+  $("#d-view").disabled = !st.profile_exists;
+  $("#r-prof").textContent = st.profile_exists ? `${fmt(st.profile_chars)} 字` : "还没有";
+  $("#r-prof").className = "badge " + (st.profile_exists ? "ok" : "");
+  paintRunning(st);
+  if (!st.running && (S.pending === null || wasRunning)) {
+    S.pending = null;
+    loadPending().then(() => { paintNext(st); paintGuide(); });   // counting can take a few seconds
+  }
+  paintNext(st);
+  paintGuide();
+  if (st.running) { wasRunning = true; setTimeout(loadDistill, 2500); }
+  else if (wasRunning) {
+    wasRunning = false; loadOverview(); loadTargets(); refreshPreview();
+    document.getElementById("d-next").scrollIntoView({ block: "center" });
+  }
+}
+async function loadPending() {
+  try { S.pending = (await api("/api/distill/preview?limit=")).conversations; } catch { S.pending = null; }
+}
+function paintNext(st) {
+  const box = $("#d-next");
+  if (st.running || !st.profile_exists) { box.hidden = true; return; }
+  const lr = st.last_run || {};
+  const cards = (lr.cards_cached || 0) + (lr.cards_new || 0);
+  const left = S.pending || 0;
+  const halted = S.halted;
+  box.className = "nextbox" + (halted ? " warn" : "");
+  box.innerHTML = (halted
+      ? `<b class="t">额度用完了，提炼已暂停</b><div class="why">${esc(halted)}</div>
+         <div>已经写好的 ${fmt(cards)} 张情节卡都保留了，档案也按它们生成好了。额度恢复后再点“开始提炼”，只会补剩下的 ${fmt(left)} 个对话。
+         也可以勾上“额度用完时”的选项：换成另一个 Agent 接着跑，或者等额度恢复后自动继续。</div>`
+      : `<b class="t">档案生成好了</b>
+         <div>${S.pending === null ? `来自 ${fmt(cards)} 个对话的情节卡。<span class="note">正在统计还剩多少对话没提炼…</span>`
+           : left ? `来自 ${fmt(cards)} 个对话；还有 ${fmt(left)} 个对话没有提炼（失败或不在这次的范围里），随时可以继续补。` : `所有对话都已提炼。`}</div>`)
+    + `<div>下一步：先在第 3 步看一眼档案，再到第 4 步把它导入你在用的 AI。</div>
+       <div class="actions"><button class="primary" data-goto="4">去导入（第 4 步）</button><button data-view-profile>查看档案</button>
+       ${left && !halted ? `<button data-continue>继续提炼剩下的 ${fmt(left)} 个</button>` : ""}</div>`;
+  box.hidden = false;
+}
+
+// ------------------------------------------------------------ step 3: review drawer
+let drTab = "candidate", drRows = [], drMode = "mem", profileText = "";
+const HELP = {
+  candidate: "点“保留”确认一条，“不要”丢掉，“改”可以直接修改文字。只有已确认的记忆会被导入。",
+  accepted: "这些会被导入到其他 AI。点“不要”可以撤下。",
+  profile: "第 4 步导入的是你在那里选的版本（默认精简）。想删改内容：点第 3 步的“在访达中显示”，直接编辑对应的 profile 文件后保存。",
+};
+function openDrawer(tab) { drMode = "mem"; $("#drawer").classList.add("open"); loadDrawer(tab); }
+async function openProfile(size) {
+  size = size || S.size || "compact";
+  const p = await api("/api/distill/profile?size=" + size).catch((e) => { toast(e.message, true); return null; });
+  if (!p) return;
+  if (!p.text) { toast("还没有档案，先完成第 2 步", true); return; }
+  drMode = "profile"; profileText = p.text;
+  $("#drawer").classList.add("open");
+  $("#dr-tabs").hidden = true;
+  $("#dr-sizes").hidden = false;
+  $$("#dr-sizes button").forEach((b) => b.classList.toggle("on", b.dataset.psize === size));
+  $("#dr-title").textContent = `记忆档案 · ${SIZE_LABEL[size]}版（${fmt(p.text.length)} 字）`;
+  $("#dr-help").textContent = HELP.profile;
+  paintDrawer();
+}
+$("#dr-close").onclick = () => { $("#drawer").classList.remove("open"); loadOverview(); };
+$("#drawer").onclick = (e) => { if (e.target.id === "drawer") $("#dr-close").onclick(); };
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("#drawer").classList.contains("open")) $("#dr-close").onclick(); });
+$("#dr-search").oninput = () => paintDrawer();
+$("#dr-sizes").onclick = (e) => { const b = e.target.closest("[data-psize]"); if (b) openProfile(b.dataset.psize); };
+async function loadDrawer(tab) {
+  drTab = tab; drMode = "mem";
+  $("#dr-tabs").hidden = false;
+  $("#dr-sizes").hidden = true;
+  $$("#dr-tabs [data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+  $("#dr-title").textContent = tab === "candidate" ? "待审核的记忆" : "已确认的记忆";
+  $("#dr-help").textContent = HELP[tab];
+  $("#dr-list").innerHTML = `<div class="empty">加载中…</div>`;
+  drRows = (await api("/api/memories?status=" + tab)).memories;
+  paintDrawer();
+}
+function visibleRows() {
+  const q = $("#dr-search").value.trim().toLowerCase();
+  return q ? drRows.filter((m) => m.text.toLowerCase().includes(q)) : drRows;
+}
+function paintDrawer() {
+  if (drMode === "profile") {
+    const q = $("#dr-search").value.trim();
+    let html = esc(profileText);
+    if (q) html = html.split(esc(q)).join(`<mark>${esc(q)}</mark>`);
+    $("#dr-list").innerHTML = `<div class="profile">${html}</div>`;
+    return;
+  }
+  const rows = visibleRows().slice(0, 400);
+  $("#dr-list").innerHTML = rows.length ? rows.map((m) => `<div class="mem" data-id="${esc(m.id)}">
+      <div><div class="t">${esc(m.text)}</div>
+      <div class="m">${esc(m.category)} · ${esc(PLATFORM[m.platform] || m.platform)}${m.seen > 1 ? ` · 出现 ${m.seen} 次` : ""}${m.scope !== "global" ? " · " + esc(m.scope) : ""}</div></div>
+      <div class="b">${drTab === "candidate" ? `<button data-keep>保留</button>` : ""}
+      <button data-edit>改</button><button class="ghost" data-drop>不要</button></div></div>`).join("")
+    : `<div class="empty">没有记忆</div>`;
+  $$("#dr-list .mem").forEach((r) => {
+    const t = r.querySelector(".t");
+    if (t.scrollHeight > t.clientHeight + 2) r.classList.add("long");
+  });
+  if (visibleRows().length > 400) $("#dr-list").insertAdjacentHTML("beforeend", `<div class="empty">只显示前 400 条，用搜索缩小范围</div>`);
+}
+$("#dr-list").addEventListener("click", async (ev) => {
+  const row = ev.target.closest(".mem");
+  if (!row) return;
+  const id = row.dataset.id;
+  const t = row.querySelector(".t");
+  if (ev.target === t && !t.isContentEditable) { if (row.classList.contains("long")) row.classList.toggle("open"); return; }
+  try {
+    if (ev.target.matches("[data-keep]")) { await api("/api/memories/update", { id, status: "accepted" }); row.remove(); drRows = drRows.filter((m) => m.id !== id); }
+    else if (ev.target.matches("[data-drop]")) { await api("/api/memories/update", { id, status: "rejected" }); row.remove(); drRows = drRows.filter((m) => m.id !== id); }
+    else if (ev.target.matches("[data-edit]")) {
+      if (t.isContentEditable) {
+        await api("/api/memories/update", { id, text: t.innerText.trim(), status: "accepted" });
+        t.contentEditable = "false"; ev.target.textContent = "改"; toast("已保存并确认");
+      } else { t.contentEditable = "true"; t.focus(); ev.target.textContent = "存"; }
+    }
+  } catch (e) { toast(e.message, true); }
+});
+async function bulk(status) {
+  const ids = visibleRows().map((m) => m.id);
+  if (!ids.length) return;
+  if (!confirm(`把列出的 ${ids.length} 条记忆全部标为“${status === "accepted" ? "已确认" : "不要"}”？`)) return;
+  await api("/api/memories/update", { ids, status });
+  toast(`已处理 ${ids.length} 条`);
+  loadDrawer(drTab);
+}
+$("#dr-all-acc").onclick = () => bulk("accepted").catch((e) => toast(e.message, true));
+$("#dr-all-rej").onclick = () => bulk("rejected").catch((e) => toast(e.message, true));
+
 // ------------------------------------------------------------ start
 (async () => {
-  if (!TOKEN) { toast("缺少访问令牌：请用 `ctxport app` 打开这个页面", true); return; }
+  if (!TOKEN) { toast("缺少访问令牌：请从桌面的 ctxport 图标或 `ctxport app` 打开这个页面", true); return; }
+  try { S.size = (await api("/api/prefs")).profile_size || "compact"; } catch { /* default */ }
   try { await Promise.all([loadOverview(), loadTargets(), loadAgents(), loadDistill(), loadWebData()]); } catch (e) { toast(e.message, true); }
 })();
 </script>

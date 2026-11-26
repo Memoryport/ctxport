@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -273,7 +274,7 @@ def _export_opts(args) -> ExportOptions:
         platform=args.platform, limit=args.limit, since=parse_since(args.since),
         include_candidates=args.include_candidates, include_tools=args.include_tools,
         include_reasoning=args.include_reasoning, redact=not args.no_redact, include_raw=args.include_raw,
-        extra={"distilled": getattr(args, "distilled", False)})
+        extra={"distilled": getattr(args, "distilled", False), "profile_size": getattr(args, "profile_size", "compact")})
 
 
 def export_and_apply(store: Store, target: str, opts: ExportOptions) -> dict:
@@ -698,7 +699,14 @@ def cmd_web_sync(args) -> int:
 
 
 def cmd_app(args) -> int:
-    from .webapp import serve
+    from .webapp import make_launcher, serve
+    if args.launcher:
+        try:
+            print(f"created {make_launcher(Path(args.launcher))} (double-click it to open ctxport)")
+        except (RuntimeError, OSError, subprocess.CalledProcessError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        return 0
     serve(args.port, open_browser=not args.no_open)
     return 0
 
@@ -731,6 +739,8 @@ def _add_export_flags(p) -> None:
     p.add_argument("--out", default="ctxport-out", help="preview/output directory (default ./ctxport-out)")
     p.add_argument("--apply", action="store_true", help="also write into the real location (managed block)")
     p.add_argument("--project", help="project directory for CLAUDE.md / AGENTS.md / GEMINI.md")
+    p.add_argument("--profile-size", choices=["compact", "standard", "full"], default="compact",
+                   help="with --distilled: compact (~8k chars, default), standard (~20k) or the full profile")
     p.add_argument("--distilled", action="store_true",
                    help="use the full profile from `ctxport distill` instead of the memory list")
     p.add_argument("--platform", help="only conversations from these platforms (comma separated)")
@@ -934,6 +944,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("app", help="open the local app: review memories and import them into other AIs")
     p.add_argument("--port", type=int, default=8766)
     p.add_argument("--no-open", action="store_true", help="don't open the browser")
+    p.add_argument("--launcher", metavar="FOLDER",
+                   help="macOS: create a double-clickable ctxport.app in FOLDER (e.g. ~/Desktop) instead of serving")
     p.set_defaults(fn=cmd_app)
 
     p = sub.add_parser("serve-ingest", help="local receiver for the ctxport browser extension (127.0.0.1)")

@@ -251,3 +251,47 @@ def test_app_web_data(app, fake_home):
     assert code == 200 and r["conversations"] == 0 and r["web_sync"] is False
     sites = {w["platform"]: w for w in call(app, "/api/web-data/sync", {"platform": "chatgpt", "on": True})[1]["sites"]}
     assert sites["chatgpt"]["web_sync"] is True
+
+
+def test_second_launch_reopens_the_running_app(tmp_path, fake_home, monkeypatch):
+    from ctxport import webapp
+    opened = []
+    monkeypatch.setattr(webapp.webbrowser, "open", opened.append)
+    t = threading.Thread(target=webapp.serve, kwargs={"port": 0, "open_browser": False}, daemon=True)
+    t.start()
+    for _ in range(100):
+        if webapp._url_file().exists():
+            break
+        threading.Event().wait(0.02)
+    url = webapp._url_file().read_text().strip()
+    port = int(url.split(":")[2].split("/")[0])
+    webapp.serve(port, open_browser=True)          # port taken by the first one: reopen it instead of failing
+    assert opened == [url]
+    webapp._url_file().write_text("http://127.0.0.1:1/#t=stale")
+    with pytest.raises(OSError):
+        webapp.serve(port, open_browser=False)      # something else holds the port: still an error
+
+
+@pytest.mark.skipif(__import__("sys").platform != "darwin", reason="macOS launcher")
+def test_desktop_launcher(tmp_path, fake_home):
+    from ctxport import webapp
+    app = webapp.make_launcher(tmp_path)
+    assert (app / "Contents" / "Resources" / "ctxport-launcher").exists()
+    assert webapp.make_launcher(tmp_path) == app     # our own launcher is replaced
+    (tmp_path / "other").mkdir()
+    (tmp_path / "other" / "ctxport.app").mkdir()
+    with pytest.raises(RuntimeError):
+        webapp.make_launcher(tmp_path / "other")    # someone else's app is left alone
+
+
+def test_app_distill_options_preview_and_stop(app):
+    code, o = call(app, "/api/distill/options")
+    assert code == 200 and set(o["choices"]) == {"claude-code", "codex"}
+    assert "max" in o["choices"]["claude-code"]["efforts"]
+    code, p = call(app, "/api/distill/preview?limit=50")
+    assert code == 200 and {"conversations", "batches", "chars", "cards", "total"} <= set(p)
+    assert call(app, "/api/distill/stop", {})[0] == 200          # nothing running: harmless
+    bad = call(app, "/api/distill/agent", {"agent": "claude-code", "effort": "turbo", "confirm": True})
+    assert bad[0] == 400
+    assert call(app, "/api/distill/profile")[1]["text"] == ""
+    assert call(app, "/api/distill/reveal", {})[0] == 400        # no profile yet

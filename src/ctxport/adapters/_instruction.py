@@ -19,11 +19,12 @@ INTRO = (
 
 
 def distilled_profile(opts: ExportOptions, short: bool = False) -> str:
-    """The `ctxport distill` profile when the export asked for it (opts.extra["distilled"]) and it exists."""
+    """The `ctxport distill` profile when the export asked for it (opts.extra["distilled"]) and it exists, in the
+    size asked for (opts.extra["profile_size"]: compact (default) | standard | full)."""
     if not opts.extra.get("distilled"):
         return ""
-    from ..distill import out_dir
-    p = out_dir() / ("profile.short.md" if short else "profile.md")
+    from ..distill import profile_file
+    p = profile_file("short" if short else str(opts.extra.get("profile_size") or "compact"))
     if not p.exists():
         return ""
     text = p.read_text(encoding="utf-8")

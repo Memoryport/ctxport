@@ -7,6 +7,63 @@ All notable changes to ctxport are listed here. The format follows
 ## [Unreleased]
 
 ### Added
+- `ctxport app` is now a guided four-step page (collect → distill → review → import) with a "next step" card and
+  how-to text on every step. Distilling with Claude Code or Codex lets you pick the model, the reasoning effort
+  (`--effort` / `model_reasoning_effort`) and how many recent conversations to process, previews the work before it
+  starts, shows progress, and can be stopped (a later run resumes).
+- Token estimates for agent distillation: before a run, from the conversations' length; after the first batch, from
+  the usage Claude Code (`--output-format json`) or Codex (`--json`) reports, saved per agent, model and effort.
+- A cheaper way to distill with Claude Code or Codex, now the default ("省 token"): conversations are shortened
+  first (code becomes one line saying what it is, stack traces their last line, long pasted text its start and end,
+  long conversations their start, end and every self-statement) and several are sent in one tool-less question.
+  Measured on real data: about 1.4k tokens per conversation instead of about 18k with the agent loop, which stays
+  available as "Agent 逐个读文件".
+- The profile comes in three sizes: compact (~8k characters, the default for imports), standard (~20k) and full.
+  The shorter ones give every category a share of the space before filling it by importance, and say that the rest
+  can be looked up. Step 4 of the app picks the size (also used by the extension and `--profile-size` on the
+  command line), step 3 shows each one. A new MCP tool, `search_memory`, searches every fact of the full profile, and
+  `get_user_memory` returns the standard profile when there is one.
+- Agent distillation can run several batches at once (1–16), stops the whole run as soon as the agent reports its
+  quota is used up (showing the agent's own message instead of the log noise around it), and can then continue with
+  the other agent and/or wait until the time the agent names for the quota to come back (keeping the Mac awake while
+  it waits). After a run the app says what to do next: how many conversations are left, view the profile, import it.
+- Codex is found inside the ChatGPT desktop app (`ChatGPT.app/Contents/Resources/codex-cli/bin/codex`) when it is not
+  on PATH, and its model list comes from Codex's own cache.
+
+### Changed
+- Re-syncing a conversation rewrites only the messages that changed. The browser extension sends a whole
+  conversation again after each new exchange; before, every message was deleted and re-inserted together with its
+  full-text index entries. On 600 synthetic conversations (33,760 messages) a re-sync with one new exchange each
+  took 0.74 s instead of 11.7 s, an unchanged re-sync 0.42 s instead of 11.1 s, and the database stayed 96 MB
+  instead of growing to 218 MB. `benchmarks/bench.py` reproduces the numbers.
+- The near-duplicate check compares a new memory only with memories whose length can reach the 80% threshold
+  (database version 5 stores each memory's bigram count) and caches bigram sets: adding 6,000 candidates took
+  2.6 s instead of 14.6 s and `memories dedupe` 0.54 s instead of 6.6 s, with the same merges.
+- Search terms shorter than 3 characters ("前端", "索引") no longer turn the whole query into a full scan: the longer
+  terms use the full-text index and the short ones filter its hits ("前端 性能优化": 27 ms instead of 70 ms, same
+  results).
+- Rule extraction finds more ways of saying who you are ("我目前是…", "我住在…", "我毕业于…", "我在腾讯做前端",
+  "I'm based in…", "I work on…", "My team uses…", "I code mostly in…") and skips more remarks about the task at hand
+  ("我用了你的方法…", "我在想要不要…", "I use this function in a loop…"). On 80 held-out labelled messages F1 rose
+  from 0.61 to 0.88 (recall 0.55 → 1.00, precision 0.69 → 0.78).
+- LLM extraction leaves out fenced code and runs of code / log lines in your messages and sends repeated messages
+  once: 61% fewer characters and 54% fewer requests on synthetic history, with every embedded fact still sent.
+- Size-limited exports (Antigravity's 12,000-character rules file) keep every category's top memories, then the most
+  seen ones, instead of cutting the file after the first categories (6 of 6 categories instead of 3 of 6 on 2,000
+  synthetic memories). `export chatgpt` also writes `chatgpt-custom-instructions.txt`, fitted to the 1,500-character
+  custom-instructions field the same way. `profile --max-chars` is about 4.5x faster.
+- The database uses `synchronous=NORMAL` with its write-ahead log: commits no longer wait for the disk, which made a
+  fresh import about 10% faster. A power cut can lose the last commits but cannot corrupt the database.
+
+### Fixed
+- Distilling with Codex works with current Codex versions, which removed `--full-auto` (the sandbox is now chosen
+  with `-s workspace-write` when `--full-auto` is missing).
+- Agent distillation no longer loads the user's own MCP servers, settings and global CLAUDE.md for every batch
+  (`--setting-sources "" --strict-mcp-config`, Codex `--ignore-user-config` with the user's default model kept).
+- Agent distillation runs no longer leave sessions in Claude Code / Codex history (`--no-session-persistence`,
+  `--ephemeral`), which ctxport would otherwise import as new conversations.
+- `ctxport app --launcher FOLDER` (macOS) creates a double-clickable ctxport.app; launching `ctxport app` while it is
+  already running reopens the running page instead of failing on the busy port.
 - `ctxport app`: a local web app (127.0.0.1, per-launch random token, Host and Origin checks) to review memories and
   import them with one click into Claude Code, Codex, Gemini CLI, Antigravity and Cursor (project rule or User
   Rules text), to connect the ctxport MCP server to Claude Desktop, Claude Code, Codex, Cursor, Gemini CLI and
@@ -40,33 +97,6 @@ All notable changes to ctxport are listed here. The format follows
   of letting it read everything again. Official export imports and accepted or rejected memories are kept; the
   official export's import record is forgotten so the next `ctxport sync` restores any conversation it had skipped.
   `ctxport web-sync [PLATFORM on|off]` shows or changes it.
-
-### Changed
-- Re-syncing a conversation rewrites only the messages that changed. The browser extension sends a whole
-  conversation again after each new exchange; before, every message was deleted and re-inserted together with its
-  full-text index entries. On 600 synthetic conversations (33,760 messages) a re-sync with one new exchange each
-  took 0.74 s instead of 11.7 s, an unchanged re-sync 0.42 s instead of 11.1 s, and the database stayed 96 MB
-  instead of growing to 218 MB. `benchmarks/bench.py` reproduces the numbers.
-- The near-duplicate check compares a new memory only with memories whose length can reach the 80% threshold
-  (database version 5 stores each memory's bigram count) and caches bigram sets: adding 6,000 candidates took
-  2.6 s instead of 14.6 s and `memories dedupe` 0.54 s instead of 6.6 s, with the same merges.
-- Search terms shorter than 3 characters ("前端", "索引") no longer turn the whole query into a full scan: the longer
-  terms use the full-text index and the short ones filter its hits ("前端 性能优化": 27 ms instead of 70 ms, same
-  results).
-- Rule extraction finds more ways of saying who you are ("我目前是…", "我住在…", "我毕业于…", "我在腾讯做前端",
-  "I'm based in…", "I work on…", "My team uses…", "I code mostly in…") and skips more remarks about the task at hand
-  ("我用了你的方法…", "我在想要不要…", "I use this function in a loop…"). On 80 held-out labelled messages F1 rose
-  from 0.61 to 0.88 (recall 0.55 → 1.00, precision 0.69 → 0.78).
-- LLM extraction leaves out fenced code and runs of code / log lines in your messages and sends repeated messages
-  once: 61% fewer characters and 54% fewer requests on synthetic history, with every embedded fact still sent.
-- Size-limited exports (Antigravity's 12,000-character rules file) keep every category's top memories, then the most
-  seen ones, instead of cutting the file after the first categories (6 of 6 categories instead of 3 of 6 on 2,000
-  synthetic memories). `export chatgpt` also writes `chatgpt-custom-instructions.txt`, fitted to the 1,500-character
-  custom-instructions field the same way. `profile --max-chars` is about 4.5x faster.
-- The database uses `synchronous=NORMAL` with its write-ahead log: commits no longer wait for the disk, which made a
-  fresh import about 10% faster. A power cut can lose the last commits but cannot corrupt the database.
-
-### Fixed
 - ChatGPT official exports in the 2026 layout (`index.html` and `export_manifest.json` instead of `chat.html`) are
   found in the Downloads folder again; before, `ctxport sync` skipped them silently.
 - E-mail addresses, WeChat / QQ ids and licence plates are no longer turned into memories (they were exported to

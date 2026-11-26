@@ -13,8 +13,9 @@ from .store import Store
 from .utils import fmt_time
 
 INSTRUCTIONS = ("ctxport gives you the user's own chat history from other AI tools (ChatGPT, Claude, Codex, Gemini, "
-                "Cherry Studio, Chatbox …) and their reviewed long-term memory. Call get_user_memory first for "
-                "background; use search_history to find earlier discussions.")
+                "Cherry Studio, Chatbox …) and their long-term memory. Call get_user_memory first for "
+                "background; search_memory finds specific facts in the user's full profile; search_history finds "
+                "earlier discussions.")
 
 
 def _store() -> Store:
@@ -24,12 +25,42 @@ def _store() -> Store:
 # ---------------------------------------------------------------- tool implementations (plain functions, testable)
 
 def get_user_memory() -> str:
-    """Return the user's accepted long-term memory (profile, preferences, projects) as Markdown."""
+    """Return the user's long-term memory (profile, preferences, projects) as Markdown: the distilled profile
+    (standard size) when there is one, otherwise the accepted memories."""
+    from .distill import out_dir, profile_file
+    if (out_dir() / "profile.md").exists():
+        return redact(profile_file("standard").read_text(encoding="utf-8"))
     with _store() as s:
         mems = s.memories(status=("accepted",))
         if not mems:
             return "No accepted memories yet. The user can review candidates with `ctxport memories edit`."
         return render_memories_md(mems, redact=True, heading_level=2)
+
+
+def search_memory(query: str, limit: int = 40) -> str:
+    """Search the user's full distilled profile (every fact ctxport extracted from all their conversations) for
+    facts containing any of the words in `query`. Use it for details the profile summary leaves out."""
+    import json as _json
+    from .distill import CATEGORY_TITLES, out_dir
+    p = out_dir() / "facts.json"
+    if not p.exists():
+        return "No distilled profile yet (the user can create one in `ctxport app`, step 2)."
+    try:
+        facts = _json.loads(p.read_text(encoding="utf-8")).get("l2") or []
+    except ValueError:
+        return "The profile file could not be read."
+    terms = [t.lower() for t in (query or "").split() if t]
+    if not terms:
+        return "Give one or more words to search for."
+    limit = max(1, min(int(limit or 40), 200))
+    hits = [f for f in facts if any(t in str(f.get("text", "")).lower() for t in terms)]
+    hits.sort(key=lambda f: (-sum(t in str(f.get("text", "")).lower() for t in terms), -(f.get("last") or 0)))
+    if not hits:
+        return f"No facts mention {query!r}. Try search_history for the raw conversations."
+    out = [f"- [{CATEGORY_TITLES.get(f.get('category'), f.get('category'))}] {redact(str(f.get('text')))}"
+           for f in hits[:limit]]
+    more = f"\n({len(hits) - limit} more; narrow the query)" if len(hits) > limit else ""
+    return "\n".join(out) + more
 
 
 def search_history(query: str, platform: Optional[str] = None, limit: int = 10) -> str:
@@ -87,7 +118,7 @@ def remember(fact: str, category: str = "general") -> str:
             "updated": "Already known.", "kept": "Already known."}[r]
 
 
-TOOLS = [get_user_memory, search_history, list_recent_conversations, get_conversation, remember]
+TOOLS = [get_user_memory, search_memory, search_history, list_recent_conversations, get_conversation, remember]
 
 
 def build_server():

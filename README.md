@@ -117,7 +117,9 @@ By default ctxport **only writes previews** to `./ctxport-out/`. Only `--apply` 
 ctxport app
 ```
 
-Opens a page served only on this computer (`127.0.0.1`, a fresh random access token per launch):
+Opens a page served only on this computer (`127.0.0.1`, a fresh random access token per launch). On macOS,
+`ctxport app --launcher ~/Desktop` once puts a double-clickable ctxport.app on the desktop: it starts the app in the
+background and opens the page, or reopens the page when the app is already running.
 
 * **Memories** — review candidates (keep / drop / rewrite, in bulk too); only accepted memories are imported.
 * **Coding agents** — write into Claude Code, Codex, Gemini CLI and Antigravity instruction files (managed block only,
@@ -144,7 +146,13 @@ ctxport distill --manual ~/ctxport-web   # prompts to paste into ChatGPT / Claud
 ctxport export claude-code --distilled --apply
 ```
 
-(Advanced: `--api` uses an OpenAI-compatible endpoint configured with `ctxport llm set`.)
+In `ctxport app` the same flow is step 2 of a guided page. By default it asks your agent directly ("省 token"):
+conversations are shortened first (code reduced to what it is, long pastes to their start and end) and several are
+sent per question, about a tenth of the tokens of letting the agent read files one by one (still available). pick Claude Code or Codex (also the copy bundled with the ChatGPT desktop app), the model (e.g. Haiku, Sonnet,
+Opus or any model name) and the reasoning effort, and how many recent conversations to process; it shows how many
+conversations, batches and tokens that is before you start (after the first batch, from the usage the agent
+reported), a progress bar while it runs, and a Stop button (a later run
+resumes). (Advanced: `--api` uses an OpenAI-compatible endpoint configured with `ctxport llm set`.)
 
 ## Summarize your background in one command
 
