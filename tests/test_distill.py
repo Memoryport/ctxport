@@ -219,3 +219,17 @@ def test_web_answer_flow(store, tmp_path):
     assert D.web_answer(store, folder, "0001.md", reply) == 1
     with pytest.raises(ValueError):
         D.web_answer(store, folder, "../x.md", "{}")
+
+
+def test_budget_lines_are_dated_newest_last():
+    canon = [{"id": "c1", "text": "The user codes in Helix", "category": "tooling", "count": 1, "sources": [],
+              "last": 1_700_000_000},
+             {"id": "c2", "text": "The user codes in Zed", "category": "tooling", "count": 1, "sources": [],
+              "last": 1_740_000_000},
+             {"id": "c3", "text": "The user likes tea", "category": "preference", "count": 1, "sources": []}]
+    text, cov = D.render_budget(canon, [{"category": c} for c in D.CATEGORIES], 1000)
+    lines = text.splitlines()
+    assert cov == 1.0 and "- The user likes tea" in lines  # undated facts stay as they were
+    helix, zed = lines.index(f"- [{D._d(1_700_000_000)}] The user codes in Helix"), \
+        lines.index(f"- [{D._d(1_740_000_000)}] The user codes in Zed")
+    assert helix < zed
