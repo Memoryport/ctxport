@@ -466,3 +466,22 @@ def read_json_file(path: Path) -> Any:
     if data[:2] == b"\x1f\x8b":
         data = gzip.decompress(data)
     return load_json_lenient(data)
+
+
+def local_http_server(address: tuple, handler):
+    """A ThreadingHTTPServer that refuses a port already in use on every platform. Python's HTTPServer sets
+    SO_REUSEADDR, which on Windows lets a second process bind the same port and silently share it; ask Windows
+    for exclusive use instead, so a second `ctxport app` or receiver fails to bind (and reuses the first)."""
+    import socket
+    import sys
+    from http.server import ThreadingHTTPServer
+
+    class _Server(ThreadingHTTPServer):
+        allow_reuse_address = sys.platform != "win32"
+
+        def server_bind(self):
+            if sys.platform == "win32" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            super().server_bind()
+
+    return _Server(address, handler)

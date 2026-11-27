@@ -265,11 +265,14 @@ def test_second_launch_reopens_the_running_app(tmp_path, fake_home, monkeypatch)
         threading.Event().wait(0.02)
     url = webapp._url_file().read_text().strip()
     port = int(url.split(":")[2].split("/")[0])
-    webapp.serve(port, open_browser=True)          # port taken by the first one: reopen it instead of failing
+    second = threading.Thread(target=webapp.serve, args=(port,), kwargs={"open_browser": True}, daemon=True)
+    second.start()
+    second.join(10)
+    assert not second.is_alive(), "a second server bound the same port"   # it must reopen the first one
     assert opened == [url]
     webapp._url_file().write_text("http://127.0.0.1:1/#t=stale")
     with pytest.raises(OSError):
-        webapp.serve(port, open_browser=False)      # something else holds the port: still an error
+        webapp.make_server(port)                    # the port is taken: binding fails on every platform
 
 
 @pytest.mark.skipif(__import__("sys").platform != "darwin", reason="macOS launcher")

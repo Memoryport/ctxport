@@ -770,7 +770,8 @@ class AppHandler(BaseHTTPRequestHandler):
 
 
 def make_server(port: int = 8766, token: Optional[str] = None) -> ThreadingHTTPServer:
-    srv = ThreadingHTTPServer(("127.0.0.1", port), AppHandler)
+    from .utils import local_http_server
+    srv = local_http_server(("127.0.0.1", port), AppHandler)
     AppHandler.port = srv.server_address[1]
     AppHandler.token = token or secrets.token_urlsafe(24)
     return srv

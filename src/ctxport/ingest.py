@@ -458,7 +458,8 @@ def compress_inbox(store: Optional[Store] = None) -> tuple:
 def make_server(port: int = 8765, db_path: Optional[Path] = None, quiet: bool = False) -> ThreadingHTTPServer:
     Handler.state = IngestState(db_path)
     Handler.quiet = quiet
-    return ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    from .utils import local_http_server
+    return local_http_server(("127.0.0.1", port), Handler)
 
 
 def print_pairing_code() -> str:
