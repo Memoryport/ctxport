@@ -75,7 +75,7 @@ jobs:
         shell: python
         run: |
           import glob, os, tarfile, zipfile
-          budget = {"*.whl": 200, "*.tar.gz": 200, "ctxport-extension-*.zip": 60}  # KB
+          budget = {"*.whl": 240, "*.tar.gz": 240, "ctxport-extension-*.zip": 60}  # KB (raised from 200 for the guided app, Nov 2026)
           for pattern, kb in budget.items():
               (path,) = glob.glob(f"dist/{pattern}")
               size = os.path.getsize(path) / 1024
