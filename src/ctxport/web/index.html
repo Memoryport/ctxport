@@ -164,6 +164,7 @@
   .toast.err { background: var(--err); color: #fff; }
   .empty { color: var(--muted); padding: 30px 0; text-align: center; }
   [hidden] { display: none !important; }
+  button.chip.lang { cursor: pointer; font: inherit; }
 
   @media (max-width: 1100px) { .two { grid-template-columns: 1fr; } }
   @media (max-width: 900px) {
@@ -191,6 +192,7 @@
       <div class="chip" id="chip-ext"><span class="dot"></span><span>浏览器扩展</span></div>
       <div class="chip" id="chip-recv"><span class="dot"></span><span>本地接收服务</span></div>
       <div class="chip" id="chip-ver">v–</div>
+      <button class="chip lang" id="lang-btn" type="button" title="切换语言 / Switch language">English</button>
     </div>
   </div>
 </header>
@@ -420,6 +422,189 @@
 "use strict";
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+// ------------------------------------------------------------ language (中文 / English)
+// Chinese is the source text. Static page text is translated from STATIC_EN when the page loads; text built in
+// script uses L(zh, en). The choice is kept in localStorage; the default follows the browser's language.
+const LANG = (() => {
+  try { const v = localStorage.getItem("ctxport-lang"); if (v === "zh" || v === "en") return v; } catch { /* private mode */ }
+  return /^zh\b/i.test(navigator.language || "") ? "zh" : "en";
+})();
+const EN = LANG === "en";
+const L = (zh, en) => (EN ? en : zh);
+const STATIC_EN = {
+  "ctxport · 记忆迁移": "ctxport · memory migration",
+  "把你在各个 AI 里的记忆带走": "Take your memory with you, across every AI",
+  "浏览器扩展": "Browser extension",
+  "本地接收服务": "Local receiver",
+  "收集聊天记录": "Collect chats",
+  "提炼记忆档案": "Distill a profile",
+  "检查和修改": "Review and edit",
+  "导入到其他 AI": "Import into other AIs",
+  "下一步": "Next step",
+  "加载中…": "Loading…",
+  "去这一步": "Go to this step",
+  "第一次用？ctxport 在做什么": "First time? What ctxport does",
+  "1 收集": "1 Collect",
+  "把 ChatGPT、Claude、Codex 等的聊天记录汇总到这台电脑上的一个数据库里。全程在本机，不上传。":
+    "Gathers your chats from ChatGPT, Claude, Codex and more into one database on this computer. Everything stays local; nothing is uploaded.",
+  "2 提炼": "2 Distill",
+  "让你自己的 AI（比如 Claude Code）把所有对话读一遍，写成一份“关于你”的档案：身份、项目、偏好、习惯。":
+    "Your own AI (Claude Code, for example) reads every conversation and writes a profile about you: who you are, your projects, preferences and habits.",
+  "3 导入": "3 Import",
+  "把这份档案一键写进别的 AI：Claude Code、Codex、Cursor、ChatGPT、Claude 网页版……换 AI 不用从头介绍自己。":
+    "Write that profile into other AIs in one click: Claude Code, Codex, Cursor, ChatGPT, Claude on the web… so a new AI already knows you.",
+  "本机上的 Claude Code、Codex、Cherry Studio、Chatbox 等会自动读取；网页版的 ChatGPT 和 Claude 需要用官方导出。":
+    "Claude Code, Codex, Cherry Studio, Chatbox and others on this computer are read automatically; ChatGPT and Claude on the web need their official export (or the browser extension).",
+  "对话": "chats", "消息": "messages", "来源": "sources",
+  "网页版 AI：用官方导出": "Web AIs: use the official export",
+  "导出包下载到“下载”文件夹后点一下就能导入；重复导入会自动去重，不会多出对话。":
+    "Once the export is in your Downloads folder, one click imports it. Importing again never duplicates conversations.",
+  "官方导出": "Official export",
+  "点“发起导出”（装了扩展会替你点；没装就打开设置页，你点“导出数据”）":
+    "Click “Request export” (the extension clicks for you; without it, the settings page opens and you click “Export data”)",
+  "几分钟到一天内，ChatGPT 会把下载链接发到你的邮箱": "Within minutes to a day, ChatGPT emails you a download link",
+  "下载 zip（不用解压），回来点“检查下载文件夹”": "Download the zip (no need to unzip), then come back and click “Check Downloads”",
+  "发起导出": "Request export",
+  "检查下载文件夹": "Check Downloads",
+  "点“打开导出页面”，在 Claude 设置 → 隐私 里点“导出数据”": "Click “Open export page”, then Claude Settings → Privacy → “Export data”",
+  "邮件里下载 zip 到“下载”文件夹": "Download the zip from the email into your Downloads folder",
+  "回来点“检查下载文件夹”": "Come back and click “Check Downloads”",
+  "打开导出页面": "Open export page",
+  "浏览器扩展同步的记录（不用扩展可以跳过）": "What the browser extension synced (skip if you don't use it)",
+  "扩展会一条条读回网页上的对话，比较慢。改用官方导出后，可以在这里删掉扩展收集的部分并停止同步；官方导出的对话和你确认过的记忆都会保留。":
+    "The extension reads your web chats back one by one, which is slower. After switching to the official export you can delete what it collected and stop syncing here; conversations from official exports and memories you confirmed are kept.",
+  "用你已经在用的 AI 读每一个对话、写一张“情节卡”；ctxport 在本机把卡片合并去重，写成一份按主题分组的档案，并检查每条事实都写进去了。不需要 API Key。":
+    "The AI you already use reads each conversation and writes an “episode card”; ctxport merges and de-duplicates the cards on this computer into a profile grouped by topic, and checks that every fact made it in. No API key needed.",
+  "Claude Code / Codex（推荐）": "Claude Code / Codex (recommended)",
+  "网页版 AI（复制粘贴）": "Web AI (copy and paste)",
+  "其他 Agent": "Other agents",
+  "这台电脑上没有找到 Claude Code 或 Codex（包括 ChatGPT 桌面应用自带的 Codex）。可以安装后重新打开 ctxport，或者改用“网页版 AI”。":
+    "Claude Code or Codex (including the Codex bundled with the ChatGPT desktop app) wasn't found on this computer. Install one and reopen ctxport, or use “Web AI” instead.",
+  "方式": "Mode",
+  "省 token（推荐）": "Token-saving (recommended)",
+  "Agent 逐个读文件": "Agent reads each file",
+  "用哪个": "Agent",
+  "模型": "Model",
+  "完整模型名，例如 claude-sonnet-5-5": "Full model name, e.g. claude-sonnet-5-5",
+  "写情节卡主要是把事实摘出来，中等模型通常就够了。": "Writing cards is mostly picking out facts, so a mid-size model is usually enough.",
+  "推理程度": "Reasoning effort",
+  "越高越仔细，也越慢、越耗额度。推荐 low；对话很杂乱时可以试 medium。":
+    "Higher is more careful but slower and uses more quota. low is recommended; try medium for messy conversations.",
+  "处理范围": "Scope",
+  "最近 50 个对话（先试一下）": "Latest 50 chats (try it first)",
+  "最近 200 个": "Latest 200", "最近 500 个": "Latest 500", "最近 1000 个": "Latest 1000", "全部对话": "All chats",
+  "已经写过卡片、内容也没变的对话会自动跳过，所以可以先试一小批，满意了再扩大范围。":
+    "Chats that already have a card and haven't changed are skipped, so try a small batch first and widen the scope later.",
+  "同时跑几批": "Parallel batches",
+  "几批同时处理，速度大约快几倍，额度消耗总量不变。开太多会撞上服务商的速率限制、也更吃电脑内存，一般 4–8 就够。":
+    "Running batches in parallel is several times faster and uses the same total quota. Too many hit the provider's rate limits and use more memory; 4–8 is usually enough.",
+  "额度用完时": "When quota runs out",
+  "换成另一个 Agent 接着跑": "Continue with the other agent",
+  "都用完了就等额度恢复，到点自动继续": "If all are used up, wait for the quota to reset and continue automatically",
+  "都不勾时会暂停，已写好的卡片都保留。等待期间电脑会保持不睡眠，ctxport 要一直开着；点“停止”可以取消等待。":
+    "With neither ticked it pauses and keeps every card written so far. While waiting, the computer stays awake and ctxport must stay open; click “Stop” to cancel.",
+  "计算中…": "Calculating…",
+  "开始提炼": "Start distilling",
+  "停止": "Stop",
+  "选择范围，点“准备批次”": "Pick a scope and click “Prepare batches”",
+  "点“复制这一批”，粘贴到 ChatGPT 或 Claude 网页的": "Click “Copy this batch”, paste it into a ",
+  "新对话": "new chat",
+  "里发送": " on ChatGPT or Claude and send it",
+  "把 AI 回复的整段 JSON 复制回下面的框，点“提交这一批”；再做下一批": "Copy the AI's whole JSON reply into the box below and click “Submit this batch”; then do the next one",
+  "全部提交后，点右边的“生成档案”": "When all are submitted, click “Build profile” on the right",
+  "最近 50 个对话": "Latest 50 chats", "全部": "All",
+  "准备批次": "Prepare batches",
+  "复制这一批": "Copy this batch",
+  "打开 ChatGPT": "Open ChatGPT", "打开 Claude": "Open Claude",
+  "把 AI 的回复粘贴到这里": "Paste the AI's reply here",
+  "提交这一批": "Submit this batch",
+  "点“打开任务文件夹”，ctxport 会把待处理的对话和说明（TASK.md）放进去": "Click “Open task folder”; ctxport puts the conversations to process and instructions (TASK.md) in it",
+  "在任意 Agent（Cursor、Windsurf、Gemini CLI……）里打开这个文件夹，对它说：": "Open that folder in any agent (Cursor, Windsurf, Gemini CLI…) and say:",
+  "“按 TASK.md 处理 conversations/ 里还没有卡片的文件”": "“Follow TASK.md and process every file in conversations/ that has no card yet”",
+  "它写完 cards/ 之后，回来点右边的“生成档案”": "When it has written cards/, come back and click “Build profile” on the right",
+  "打开任务文件夹": "Open task folder",
+  "档案": "Profile",
+  "查看档案": "View profile",
+  "生成档案": "Build profile",
+  "把已经写好的情节卡重新合并成档案，不调用任何模型": "Merge the cards already written into the profile again, without calling any model",
+  "导入前看一眼，删掉不对或不想让别的 AI 知道的内容。": "Take a look before importing; remove anything wrong or that other AIs shouldn't know.",
+  "记忆档案": "Memory profile",
+  "第 2 步生成的档案，分精简、标准、完整三个版本；第 4 步导入的是你选的那个版本（ChatGPT 有 1400 字上限，始终用最短的版本）。":
+    "The profile from step 2 comes in compact, standard and full versions; step 4 imports the one you pick (ChatGPT has a 1,400-character limit and always gets the shortest).",
+  "在访达中显示": "Show in Finder",
+  "单条记忆": "Single memories",
+  "已确认 ·": "accepted ·", "待审核": "to review",
+  "从聊天里自动摘出的短句（比如“用户偏好简洁回答”）。只有“已确认”的会被导入；没有档案时就导入这些。":
+    "Short facts picked out of your chats automatically (e.g. “prefers concise answers”). Only accepted ones are imported; they're used when there is no profile.",
+  "审核待审核的": "Review pending",
+  "查看已确认": "View accepted",
+  "选你在用的 AI，点一下。之后档案更新了，回来再点一次“更新”即可。": "Pick the AIs you use and click once. When the profile changes, come back and click “Update”.",
+  "导入哪个版本": "Version to import",
+  "精简（推荐）": "Compact (recommended)", "标准": "Standard", "完整": "Full", "精简": "Compact",
+  "编程 Agent": "Coding agents",
+  "写进它们的指令文件（如 ~/.claude/CLAUDE.md）。只改 ctxport 自己那一块，你原来写的内容不动，第一次写入前自动备份。":
+    "Written into their instruction files (e.g. ~/.claude/CLAUDE.md). Only ctxport's own block changes; your text is untouched and the file is backed up before the first write.",
+  "让 Agent 能搜索全部历史（MCP）": "Let agents search your whole history (MCP)",
+  "档案是摘要；接上 MCP 后，Agent 遇到需要时还能搜你在所有 AI 里的原始对话。连接后需要重启对应的应用。":
+    "The profile is a summary; with MCP connected, an agent can also search your original conversations from every AI when it needs to. Restart the app after connecting.",
+  "网页版 AI": "Web AIs",
+  "装了 ctxport 浏览器扩展会直接写进去；没装时会复制好文本并打开对应页面，你粘贴保存即可。":
+    "With the ctxport browser extension it's written in directly; without it, the text is copied and the page opens for you to paste and save.",
+  "桌面聊天应用": "Desktop chat apps",
+  "生成导入文件并在访达里定位。ctxport 不会直接改这些应用的数据库。": "Creates an import file and shows it in Finder. ctxport never edits these apps' databases.",
+  "记忆": "Memories",
+  "搜索…": "Search…",
+  "关闭": "Close",
+  "已确认": "Accepted",
+  "全部保留": "Keep all", "全部不要": "Drop all",
+  "把下面列出的全部标为已确认": "Mark everything listed below as accepted",
+  "把下面列出的全部标为不要": "Mark everything listed below as dropped",
+  "切换语言 / Switch language": "切换语言 / Switch language",
+};
+// Fixed text that the local server sends (hints, labels, errors); other server text is shown as is.
+const SERVER_EN = {
+  "重启 Claude Desktop 后生效": "Takes effect after restarting Claude Desktop",
+  "新开的 Claude Code 会话里生效（/mcp 可查看）": "Takes effect in new Claude Code sessions (check with /mcp)",
+  "重启 Codex 后生效": "Takes effect after restarting Codex",
+  "Cursor 设置 → MCP 里可看到 ctxport": "Shows up in Cursor Settings → MCP",
+  "新开的 gemini 会话里 /mcp 可查看": "Check with /mcp in a new gemini session",
+  "Antigravity 里刷新 MCP Servers 后生效": "Takes effect after refreshing MCP Servers in Antigravity",
+  "找不到 claude 命令；请先安装 Claude Code": "The claude command wasn't found; install Claude Code first",
+  "自定义指令（关于你）": "Custom instructions", "记忆导入": "Memory import", "已保存的信息": "Saved info",
+  "Cursor 需要选一个项目文件夹；全局规则请用“复制”粘贴到 Cursor 设置 → Rules → User Rules":
+    "Cursor needs a project folder; for a global rule, use “Copy” and paste into Cursor Settings → Rules → User Rules",
+  "已经在提炼中": "Already distilling",
+  "还没有档案，先完成第 2 步": "No profile yet; finish step 2 first",
+  "默认（Claude Code 当前设置）": "Default (Claude Code's current setting)",
+  "Haiku：最快、最省额度": "Haiku: fastest, least quota",
+  "Sonnet：速度和质量均衡（推荐）": "Sonnet: balanced speed and quality (recommended)",
+  "Opus：质量最高、最耗额度": "Opus: best quality, most quota",
+  "默认（Codex 当前设置）": "Default (Codex's current setting)",
+};
+const tr = (s) => (EN && SERVER_EN[s]) || s;
+function translateStatic(root) {
+  document.documentElement.lang = EN ? "en" : "zh-CN";
+  if (!EN) return;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let n = w.nextNode(); n; n = w.nextNode()) {
+    const key = n.nodeValue.trim();
+    if (key && STATIC_EN[key]) n.nodeValue = n.nodeValue.replace(key, STATIC_EN[key]);
+  }
+  for (const el of root.querySelectorAll("[placeholder], [title]")) {
+    for (const a of ["placeholder", "title"]) {
+      const v = el.getAttribute(a);
+      if (v && STATIC_EN[v]) el.setAttribute(a, STATIC_EN[v]);
+    }
+  }
+  document.title = STATIC_EN[document.title] || document.title;
+}
+translateStatic(document.body);
+$("#lang-btn").textContent = EN ? "中文" : "English";
+$("#lang-btn").onclick = () => {
+  try { localStorage.setItem("ctxport-lang", EN ? "zh" : "en"); } catch { /* private mode */ }
+  location.reload();
+};
+
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const store = {
   get(k, d) { try { const v = localStorage.getItem("ctxport-" + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -456,8 +641,8 @@ function toast(msg, err) {
 async function run(btn, fn) {
   const label = btn.textContent;
   btn.disabled = true;
-  btn.textContent = "处理中…";
-  try { await fn(); } catch (e) { toast(e.message || String(e), true); }
+  btn.textContent = L("处理中…", "Working…");
+  try { await fn(); } catch (e) { toast(tr(e.message || String(e)), true); }
   finally { btn.disabled = false; btn.textContent = label; }
 }
 
@@ -475,13 +660,13 @@ function askExtension(action, target) {
     const id = Math.random().toString(36).slice(2);
     pending.set(id, resolve);
     window.postMessage({ source: "ctxport-app", id, action, target }, location.origin);
-    setTimeout(() => { if (pending.has(id)) { pending.delete(id); resolve({ ok: false, error: "扩展没有响应" }); } }, 120000);
+    setTimeout(() => { if (pending.has(id)) { pending.delete(id); resolve({ ok: false, error: L("扩展没有响应", "The extension did not respond") }); } }, 120000);
   });
 }
 function paintExt() {
   const c = $("#chip-ext");
   c.querySelector(".dot").className = "dot " + (extReady ? "ok" : "off");
-  c.lastElementChild.textContent = extReady ? "浏览器扩展已连接" : "未检测到浏览器扩展";
+  c.lastElementChild.textContent = extReady ? L("浏览器扩展已连接", "Extension connected") : L("未检测到浏览器扩展", "No browser extension");
 }
 window.postMessage({ source: "ctxport-app", action: "hello" }, location.origin);
 setTimeout(paintExt, 1200);
@@ -489,20 +674,26 @@ setTimeout(paintExt, 1200);
 // ------------------------------------------------------------ state shared by the guide
 const S = { convs: 0, accepted: 0, candidate: 0, profile: false, profileChars: 0, exported: 0, running: false,
   pending: null, halted: "", size: "compact", sizes: {}, cov: {} };
-const SIZE_LABEL = { compact: "精简", standard: "标准", full: "完整" };
+const SIZE_LABEL = EN ? { compact: "Compact", standard: "Standard", full: "Full" } : { compact: "精简", standard: "标准", full: "完整" };
 const approxTok = (chars) => Math.round(chars * 0.65);
 function paintSize() {
   $$("#f-size button").forEach((b) => {
     const n = S.sizes[b.dataset.v];
     b.classList.toggle("on", b.dataset.v === S.size);
-    b.textContent = SIZE_LABEL[b.dataset.v] + (b.dataset.v === "compact" ? "（推荐）" : "")
-      + (n ? ` · ${fmt(n)} 字` : "");
+    b.textContent = SIZE_LABEL[b.dataset.v] + (b.dataset.v === "compact" ? L("（推荐）", " (recommended)") : "")
+      + (n ? L(` · ${fmt(n)} 字`, ` · ${fmt(n)} chars`) : "");
   });
   const n = S.sizes[S.size] || 0, cov = S.cov[S.size];
   $("#size-card").hidden = !S.profile;
-  $("#f-size-help").innerHTML = !S.profile ? "" :
-    `这个版本约 <b>${fmt(n)}</b> 字、约 <b>${fmtTok(approxTok(n))}</b> token，`
-    + (S.size === "full" ? "包含全部内容。" : `包含档案里 <b>${cov == null ? "–" : Math.round(cov * 100) + "%"}</b> 的条目，每个类别都选了最重要的。`)
+  const covTxt = cov == null ? "–" : Math.round(cov * 100) + "%";
+  $("#f-size-help").innerHTML = !S.profile ? "" : EN
+    ? `This version is about <b>${fmt(n)}</b> characters, about <b>${fmtTok(approxTok(n))}</b> tokens, `
+      + (S.size === "full" ? "with everything in it. " : `with <b>${covTxt}</b> of the profile's items, the most important ones from every category. `)
+      + `Coding agents read it at the start of every new chat, so shorter saves quota.`
+      + (S.size === "full" ? `<br><b>The full version is long</b>: it noticeably raises the cost of every chat, and Codex may cut off the end.`
+        : `<br>Details left out aren't lost: connect MCP under “Let agents search your whole history” and agents can look up the full profile with search_memory.`)
+    : `这个版本约 <b>${fmt(n)}</b> 字、约 <b>${fmtTok(approxTok(n))}</b> token，`
+    + (S.size === "full" ? "包含全部内容。" : `包含档案里 <b>${covTxt}</b> 的条目，每个类别都选了最重要的。`)
     + `编程 Agent 每开一个新对话都会读一遍它，所以越短越省额度。`
     + (S.size === "full" ? `<br><b>完整版很长</b>，会明显增加每次对话的消耗，Codex 还可能截掉后面的部分。`
       : `<br>没写进来的细节不会丢：在下面“让 Agent 能搜索全部历史”里接上 MCP，Agent 需要时会用 search_memory 查完整档案。`);
@@ -512,18 +703,22 @@ $("#f-size").onclick = (e) => {
   S.size = b.dataset.v; paintSize();
   api("/api/prefs", { profile_size: S.size }).catch((err) => toast(err.message, true));
 };
-const fmt = (n) => Number(n || 0).toLocaleString("zh-CN");
+const fmt = (n) => Number(n || 0).toLocaleString(EN ? "en-US" : "zh-CN");
 const PLATFORM = { "chatgpt": "ChatGPT", "claude-ai": "Claude.ai", "claude-code": "Claude Code", "codex": "Codex",
   "gemini-cli": "Gemini CLI", "gemini-web": "Gemini", "antigravity": "Antigravity", "cherry-studio": "Cherry Studio",
-  "chatbox": "Chatbox", "openai-messages": "其他", "ctxport-jsonl": "ctxport" };
+  "chatbox": "Chatbox", "openai-messages": L("其他", "Other"), "ctxport-jsonl": "ctxport" };
 
 function paintGuide() {
   const done = { 1: S.convs > 0, 2: S.profile, 3: false, 4: S.exported > 0 };
   const sub = {
-    1: S.convs ? `${fmt(S.convs)} 个对话` : "还没有对话",
-    2: S.running ? "提炼中…" : S.profile ? `档案 ${fmt(S.profileChars)} 字${S.pending ? ` · 还剩 ${fmt(S.pending)} 个对话` : ""}` : "还没有档案",
-    3: S.profile ? "可选：导入前看一眼" : S.candidate ? `可选：${fmt(S.candidate)} 条待审核` : "可选",
-    4: S.exported ? `已导入 ${S.exported} 处` : "还没有导入",
+    1: S.convs ? L(`${fmt(S.convs)} 个对话`, `${fmt(S.convs)} chats`) : L("还没有对话", "No chats yet"),
+    2: S.running ? L("提炼中…", "Distilling…") : S.profile
+      ? L(`档案 ${fmt(S.profileChars)} 字${S.pending ? ` · 还剩 ${fmt(S.pending)} 个对话` : ""}`,
+          `Profile: ${fmt(S.profileChars)} chars${S.pending ? ` · ${fmt(S.pending)} chats left` : ""}`)
+      : L("还没有档案", "No profile yet"),
+    3: S.profile ? L("可选：导入前看一眼", "Optional: look before importing")
+      : S.candidate ? L(`可选：${fmt(S.candidate)} 条待审核`, `Optional: ${fmt(S.candidate)} to review`) : L("可选", "Optional"),
+    4: S.exported ? L(`已导入 ${S.exported} 处`, `Imported into ${S.exported}`) : L("还没有导入", "Not imported yet"),
   };
   let cur = !done[1] ? 1 : !done[2] ? 2 : !done[4] ? 4 : 0;
   if (S.running) cur = 2;
@@ -534,11 +729,18 @@ function paintGuide() {
     $("#ns-" + i).textContent = sub[i];
     $("#sh-" + i).classList.toggle("done", done[i]);
     const b = $("#sb-" + i);
-    b.textContent = done[i] ? "已完成" : i === cur ? "下一步" : i === 3 ? "可选" : "";
+    b.textContent = done[i] ? L("已完成", "Done") : i === cur ? L("下一步", "Next") : i === 3 ? L("可选", "Optional") : "";
     b.className = "badge " + (done[i] ? "ok" : i === cur ? "acc" : "");
     b.hidden = !b.textContent;
   }
-  const NEXT = {
+  const NEXT = EN ? {
+    1: ["Collect your chats", "First gather your chats on this computer. Use the official export (or the extension) for ChatGPT / Claude on the web; local agents are read automatically."],
+    2: ["Distill a memory profile", `You have ${fmt(S.convs)} chats. Pick a model, try the latest 50 first, and widen the scope once you like the result.`],
+    4: ["Import into other AIs", S.pending
+      ? `The profile is ready to use (${fmt(S.pending)} chats aren't distilled yet; you can add them later). Pick the AIs you use and write it in with one click; you can look at it in step 3 first.`
+      : "The profile is ready. Pick the AIs you use and write it in with one click; you can look at it in step 3 first."],
+    0: ["All done", "When you have new chats: import them in step 1, step 2 only processes what's new, then click “Update” in step 4."],
+  } : {
     1: ["收集聊天记录", "先把聊天记录汇总到本机。网页版 ChatGPT / Claude 用官方导出，本机的 Agent 会自动读取。"],
     2: ["提炼记忆档案", `已经有 ${fmt(S.convs)} 个对话。选一个模型，先试最近 50 个对话，看看效果再扩大范围。`],
     4: ["导入到其他 AI", S.pending
@@ -546,7 +748,7 @@ function paintGuide() {
       : "档案已经准备好。选你在用的 AI，一键写进去；导入前也可以先在第 3 步看一眼档案。"],
     0: ["全部完成", "以后有了新对话：回到第 1 步导入，第 2 步只会处理新增的对话，再在第 4 步点“更新”。"],
   };
-  if (S.running) NEXT[2] = ["正在提炼…", "可以离开这个页面，提炼在后台继续；回来能看到进度。"];
+  if (S.running) NEXT[2] = L(["正在提炼…", "可以离开这个页面，提炼在后台继续；回来能看到进度。"], ["Distilling…", "You can leave this page; distilling continues in the background and you will see the progress when you come back."]);
   const [t, why] = NEXT[cur];
   $("#next-title").textContent = t;
   $("#next-why").textContent = why;
@@ -568,45 +770,47 @@ async function loadOverview() {
   $("#chip-ver").textContent = "v" + o.version;
   const r = $("#chip-recv");
   r.querySelector(".dot").className = "dot " + (o.receiver.running ? "ok" : "off");
-  r.lastElementChild.textContent = o.receiver.running ? "接收服务运行中" : "接收服务未运行";
+  r.lastElementChild.textContent = o.receiver.running ? L("接收服务运行中", "Receiver running") : L("接收服务未运行", "Receiver not running");
   paintGuide();
 }
 
 // ------------------------------------------------------------ step 4 cards
 function agentCard(a) {
-  const status = a.imported ? `<span class="badge ok">已导入</span>` : (a.exists === false && a.installed === false
-    ? `<span class="badge">未安装</span>` : `<span class="badge warn">未导入</span>`);
+  const status = a.imported ? `<span class="badge ok">${L("已导入", "Imported")}</span>` : (a.exists === false && a.installed === false
+    ? `<span class="badge">${L("未安装", "Not installed")}</span>` : `<span class="badge warn">${L("未导入", "Not imported")}</span>`);
   if (a.key === "cursor") {
-    return `<div class="panel card"><div class="top"><span class="name">Cursor</span><span class="badge">按项目</span></div>
-      <input type="text" placeholder="项目文件夹，例如 ~/code/my-app" data-project>
-      <div class="actions"><button class="primary" data-agent="cursor">写入项目规则</button>
-      <button data-copy="cursor">复制到 User Rules</button></div></div>`;
+    return `<div class="panel card"><div class="top"><span class="name">Cursor</span><span class="badge">${L("按项目", "Per project")}</span></div>
+      <input type="text" placeholder="${L("项目文件夹，例如 ~/code/my-app", "Project folder, e.g. ~/code/my-app")}" data-project>
+      <div class="actions"><button class="primary" data-agent="cursor">${L("写入项目规则", "Write project rule")}</button>
+      <button data-copy="cursor">${L("复制到 User Rules", "Copy for User Rules")}</button></div></div>`;
   }
   return `<div class="panel card"><div class="top"><span class="name">${esc(a.label)}</span>${status}</div>
     <div class="meta">${esc(a.path)}</div>
-    <div class="actions"><button class="primary" data-agent="${esc(a.key)}">${a.imported ? "更新" : "一键导入"}</button></div></div>`;
+    <div class="actions"><button class="primary" data-agent="${esc(a.key)}">${a.imported ? L("更新", "Update") : L("一键导入", "Import")}</button></div></div>`;
 }
 function mcpCard(m) {
-  const status = m.connected ? `<span class="badge ok">已连接</span>` : (m.installed ? `<span class="badge warn">未连接</span>`
-    : `<span class="badge">未检测到</span>`);
+  const status = m.connected ? `<span class="badge ok">${L("已连接", "Connected")}</span>` : (m.installed ? `<span class="badge warn">${L("未连接", "Not connected")}</span>`
+    : `<span class="badge">${L("未检测到", "Not found")}</span>`);
   return `<div class="panel card"><div class="top"><span class="name">${esc(m.label)}</span>${status}</div>
-    <div class="meta">${esc(m.error ? "配置文件读不了：" + m.error : m.hint)}</div>
+    <div class="meta">${esc(m.error ? L("配置文件读不了：", "Can’t read the config file: ") + m.error : tr(m.hint))}</div>
     <div class="actions">${m.connected
-      ? `<button data-mcp-off="${esc(m.key)}">断开</button><button data-mcp="${esc(m.key)}">重新连接</button>`
-      : `<button class="primary" data-mcp="${esc(m.key)}">一键连接</button>`}</div></div>`;
+      ? `<button data-mcp-off="${esc(m.key)}">${L("断开", "Disconnect")}</button><button data-mcp="${esc(m.key)}">${L("重新连接", "Reconnect")}</button>`
+      : `<button class="primary" data-mcp="${esc(m.key)}">${L("一键连接", "Connect")}</button>`}</div></div>`;
 }
 function webCard(w) {
-  return `<div class="panel card"><div class="top"><span class="name">${esc(w.label)}</span><span class="badge">${esc(w.where)}</span></div>
-    <div class="meta">${w.limit ? `限 ${w.limit} 字，会自动挑最重要的内容` : S.profile ? "写入上面选的档案版本" : "写入全部已确认记忆"}</div>
-    <div class="actions"><button class="primary" data-web="${esc(w.key)}">一键写入</button>
-    <button data-copy-open="${esc(w.key)}" data-url="${esc(w.url)}">复制并打开网页</button></div></div>`;
+  return `<div class="panel card"><div class="top"><span class="name">${esc(w.label)}</span><span class="badge">${esc(tr(w.where))}</span></div>
+    <div class="meta">${w.limit ? L(`限 ${w.limit} 字，会自动挑最重要的内容`, `Up to ${w.limit} characters; the most important items are picked`)
+      : S.profile ? L("写入上面选的档案版本", "Writes the profile version chosen above") : L("写入全部已确认记忆", "Writes all accepted memories")}</div>
+    <div class="actions"><button class="primary" data-web="${esc(w.key)}">${L("一键写入", "Write")}</button>
+    <button data-copy-open="${esc(w.key)}" data-url="${esc(w.url)}">${L("复制并打开网页", "Copy and open page")}</button></div></div>`;
 }
 function appCard(a) {
   return `<div class="panel card"><div class="top"><span class="name">${esc(a.label)}</span>
-    ${a.installed ? `<span class="badge ok">已安装</span>` : `<span class="badge">未检测到</span>`}</div>
-    <div class="meta">${a.key === "chatbox" ? "生成可导入的备份文件和系统提示词" : "生成助手提示词，可新建一个“我”助手粘贴"}</div>
-    <div class="actions"><button class="primary" data-app="${esc(a.key)}">生成并打开</button>
-    ${a.key === "cherry-studio" ? `<button data-copy="cherry-studio">复制提示词</button>` : ""}</div></div>`;
+    ${a.installed ? `<span class="badge ok">${L("已安装", "Installed")}</span>` : `<span class="badge">${L("未检测到", "Not found")}</span>`}</div>
+    <div class="meta">${a.key === "chatbox" ? L("生成可导入的备份文件和系统提示词", "Creates an importable backup file and a system prompt")
+      : L("生成助手提示词，可新建一个“我”助手粘贴", "Creates an assistant prompt to paste into a new “Me” assistant")}</div>
+    <div class="actions"><button class="primary" data-app="${esc(a.key)}">${L("生成并打开", "Create and open")}</button>
+    ${a.key === "cherry-studio" ? `<button data-copy="cherry-studio">${L("复制提示词", "Copy prompt")}</button>` : ""}</div></div>`;
 }
 async function loadTargets() {
   const t = await api("/api/targets");
@@ -625,8 +829,10 @@ async function copyText(target) {
 async function importDownloads() {
   const r = await api("/api/import-downloads", {});
   const c = r.chatgpt, a = r["claude-ai"];
-  toast(c.zips || a.zips ? `找到 ChatGPT 导出包 ${c.zips} 个、Claude.ai ${a.zips} 个，导入 ${fmt(c.conversations + a.conversations)} 个对话`
-    : "下载文件夹里还没有官方导出包。下载好 zip（不用解压）后再点一次。");
+  toast(c.zips || a.zips
+    ? L(`找到 ChatGPT 导出包 ${c.zips} 个、Claude.ai ${a.zips} 个，导入 ${fmt(c.conversations + a.conversations)} 个对话`,
+        `Found ${c.zips} ChatGPT and ${a.zips} Claude.ai export(s); imported ${fmt(c.conversations + a.conversations)} chats`)
+    : L("下载文件夹里还没有官方导出包。下载好 zip（不用解压）后再点一次。", "No official export in your Downloads folder yet. Download the zip (no need to unzip) and click again."));
   await loadOverview();
   refreshPreview();
 }
@@ -639,43 +845,45 @@ document.addEventListener("click", (ev) => {
     const project = d.agent === "cursor" ? (b.closest(".card").querySelector("[data-project]").value || "").trim() : undefined;
     const r = await api("/api/agent/apply", { key: d.agent, project, size: S.size });
     const a = (r.applied || [])[0] || {};
-    toast(`已写入${S.profile ? SIZE_LABEL[S.size] + "版档案" : ""}：${a.path || ""}${a.backup ? "\n原文件备份：" + a.backup : ""}`);
+    toast(L(`已写入${S.profile ? SIZE_LABEL[S.size] + "版档案" : ""}：${a.path || ""}${a.backup ? "\n原文件备份：" + a.backup : ""}`,
+      `Wrote ${S.profile ? "the " + SIZE_LABEL[S.size].toLowerCase() + " profile" : "memories"} to ${a.path || ""}${a.backup ? "\nBackup of the original: " + a.backup : ""}`));
     loadTargets();
   });
   else if (d.mcp) run(b, async () => {
     const r = await api("/api/mcp/connect", { key: d.mcp });
-    toast(`已连接：${r.path}${r.backup ? "\n原配置备份：" + r.backup : ""}\n重启这个应用后生效。`);
+    toast(L(`已连接：${r.path}${r.backup ? "\n原配置备份：" + r.backup : ""}\n重启这个应用后生效。`,
+      `Connected: ${r.path}${r.backup ? "\nBackup of the original config: " + r.backup : ""}\nRestart that app for it to take effect.`));
     loadTargets();
   });
-  else if (d.mcpOff) run(b, async () => { await api("/api/mcp/disconnect", { key: d.mcpOff }); toast("已断开"); loadTargets(); });
+  else if (d.mcpOff) run(b, async () => { await api("/api/mcp/disconnect", { key: d.mcpOff }); toast(L("已断开", "Disconnected")); loadTargets(); });
   else if (d.web) run(b, async () => {
     if (!extReady) {
       await copyText(d.web);
       const url = b.closest(".card").querySelector("[data-url]").dataset.url;
       await api("/api/open-url", { url });
-      toast("没有检测到浏览器扩展：已复制文本并打开网页，请粘贴后保存。");
+      toast(L("没有检测到浏览器扩展：已复制文本并打开网页，请粘贴后保存。", "No browser extension: the text is copied and the page is open; paste it and save."));
       return;
     }
     const r = await askExtension("push-memory", d.web);
-    if (!r.ok) throw new Error(r.error || "写入失败");
-    toast(r.message || "已写入");
+    if (!r.ok) throw new Error(r.error || L("写入失败", "Write failed"));
+    toast(r.message || L("已写入", "Written"));
   });
   else if (d.copyOpen) run(b, async () => {
     await copyText(d.copyOpen);
     await api("/api/open-url", { url: d.url });
-    toast("已复制，网页已打开，粘贴后保存即可。");
+    toast(L("已复制，网页已打开，粘贴后保存即可。", "Copied and the page is open; paste and save."));
   });
-  else if (d.copy) run(b, async () => { await copyText(d.copy); toast("已复制到剪贴板"); });
+  else if (d.copy) run(b, async () => { await copyText(d.copy); toast(L("已复制到剪贴板", "Copied to the clipboard")); });
   else if (d.app) run(b, async () => {
     const r = await api("/api/app/export", { key: d.app });
-    toast(`已生成：${(r.files || []).join("\n")}\n${r.instructions || ""}`);
+    toast(`${L("已生成：", "Created: ")}${(r.files || []).join("\n")}\n${r.instructions || ""}`);
   });
   else if ("importDl" in d) run(b, importDownloads);
   else if (d.goto) document.getElementById("step-" + d.goto).scrollIntoView();
   else if ("continue" in d) {
     setMethod("agent"); $("#f-limit").value = ""; remember(); refreshPreview();
     document.getElementById("m-agent").scrollIntoView({ block: "center" });
-    toast("范围已设为“全部对话”，已有卡片的会跳过。确认设置后点“开始提炼”。");
+    toast(L("范围已设为“全部对话”，已有卡片的会跳过。确认设置后点“开始提炼”。", "Scope set to “All chats”; chats that already have cards are skipped. Check the settings and click “Start distilling”."));
   }
   else if ("viewProfile" in d) openProfile();
   else if (d.open) openDrawer(d.open);
@@ -686,52 +894,55 @@ document.addEventListener("click", (ev) => {
 $("#x-request").onclick = () => run($("#x-request"), async () => {
   if (!extReady) {
     await api("/api/open-url", { url: "https://chatgpt.com/#settings/DataControls" });
-    toast("已打开 ChatGPT 设置：在“数据管理”里点“导出数据”，再确认导出。");
+    toast(L("已打开 ChatGPT 设置：在“数据管理”里点“导出数据”，再确认导出。", "ChatGPT settings are open: under “Data controls” click “Export data” and confirm."));
     return;
   }
   const r = await askExtension("request-export");
-  if (!r.ok) throw new Error(r.error || "发起失败");
-  toast(r.message || "已发起，请查收邮件");
+  if (!r.ok) throw new Error(r.error || L("发起失败", "Request failed"));
+  toast(r.message || L("已发起，请查收邮件", "Requested; check your email"));
 });
 $("#x-claude").onclick = () => run($("#x-claude"), async () => {
   await api("/api/open-url", { url: "https://claude.ai/settings/data-privacy-controls" });
-  toast("已打开 Claude 设置：点“导出数据”，邮件到了以后下载 zip。");
+  toast(L("已打开 Claude 设置：点“导出数据”，邮件到了以后下载 zip。", "Claude settings are open: click “Export data”, then download the zip from the email."));
 });
 
-const SITE_NAMES = { chatgpt: "ChatGPT", "claude-ai": "Claude.ai", "gemini-web": "Gemini 网页版" };
+const SITE_NAMES = { chatgpt: "ChatGPT", "claude-ai": "Claude.ai", "gemini-web": L("Gemini 网页版", "Gemini (web)") };
 const fmtBytes = (n) => n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.round(n / 1024) + " KB";
 async function loadWebData() {
   const { sites } = await api("/api/web-data");
   const box = $("#webdata");
   box.innerHTML = sites.map((w) => `
     <div class="panel card"><div class="top"><span class="name">${esc(SITE_NAMES[w.platform] || w.platform)}</span>
-      <span class="badge">网页同步${w.web_sync ? "开" : "已关闭"}</span></div>
+      <span class="badge">${w.web_sync ? L("网页同步开", "Web sync on") : L("网页同步已关闭", "Web sync off")}</span></div>
       <div class="meta">${w.conversations || w.files
-        ? `${fmt(w.conversations)} 个对话 · ${fmt(w.messages)} 条消息 · 原始文件 ${fmtBytes(w.bytes)}`
-        : "没有网页同步的记录"}</div>
+        ? L(`${fmt(w.conversations)} 个对话 · ${fmt(w.messages)} 条消息 · 原始文件 ${fmtBytes(w.bytes)}`,
+            `${fmt(w.conversations)} chats · ${fmt(w.messages)} messages · raw files ${fmtBytes(w.bytes)}`)
+        : L("没有网页同步的记录", "Nothing synced from the web")}</div>
       <div class="actions">
-        ${w.conversations || w.files ? `<button class="danger" data-forget="${esc(w.platform)}">删除并停止同步</button>` : ""}
-        <button data-sync="${esc(w.platform)}" data-on="${w.web_sync ? "" : "1"}">${w.web_sync ? "停止网页同步" : "恢复网页同步"}</button>
+        ${w.conversations || w.files ? `<button class="danger" data-forget="${esc(w.platform)}">${L("删除并停止同步", "Delete and stop syncing")}</button>` : ""}
+        <button data-sync="${esc(w.platform)}" data-on="${w.web_sync ? "" : "1"}">${w.web_sync ? L("停止网页同步", "Stop web sync") : L("恢复网页同步", "Resume web sync")}</button>
       </div></div>`).join("");
   box.querySelectorAll("[data-forget]").forEach((b) => b.onclick = () => run(b, async () => {
     const w = sites.find((x) => x.platform === b.dataset.forget);
     const name = SITE_NAMES[w.platform] || w.platform;
-    if (!confirm(`删除 ${name} 网页同步的 ${w.conversations} 个对话（${w.messages} 条消息）和 ${fmtBytes(w.bytes)} 原始文件？\n\n` +
-      `删除后无法恢复，并且会停止 ${name} 的网页同步。官方导出导入的对话和已确认的记忆会保留。`)) return;
+    if (!confirm(L(`删除 ${name} 网页同步的 ${w.conversations} 个对话（${w.messages} 条消息）和 ${fmtBytes(w.bytes)} 原始文件？\n\n` +
+      `删除后无法恢复，并且会停止 ${name} 的网页同步。官方导出导入的对话和已确认的记忆会保留。`,
+      `Delete the ${w.conversations} chats (${w.messages} messages) and ${fmtBytes(w.bytes)} of raw files synced from ${name}?\n\n` +
+      `This can't be undone, and web sync for ${name} stops. Chats from official exports and accepted memories are kept.`))) return;
     const r = await api("/api/web-data/forget", { platform: w.platform, confirm: true });
-    toast(`已删除 ${fmt(r.conversations)} 个对话、${fmt(r.files)} 个文件`);
+    toast(L(`已删除 ${fmt(r.conversations)} 个对话、${fmt(r.files)} 个文件`, `Deleted ${fmt(r.conversations)} chats and ${fmt(r.files)} files`));
     await Promise.all([loadWebData(), loadOverview()]);
   }));
   box.querySelectorAll("[data-sync]").forEach((b) => b.onclick = () => run(b, async () => {
     await api("/api/web-data/sync", { platform: b.dataset.sync, on: !!b.dataset.on });
-    toast(b.dataset.on ? "已恢复网页同步" : "已停止网页同步，扩展不会再读这个网站");
+    toast(b.dataset.on ? L("已恢复网页同步", "Web sync resumed") : L("已停止网页同步，扩展不会再读这个网站", "Web sync stopped; the extension won’t read this site any more"));
     await loadWebData();
   }));
 }
 
 // ------------------------------------------------------------ step 2: distillation
 const AGENT_LABEL = { "claude-code": "Claude Code", "codex": "Codex" };
-const EFFORT_LABEL = { "": "默认", minimal: "最低", low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" };
+const EFFORT_LABEL = { "": L("默认", "Default"), minimal: L("最低", "minimal"), low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" };
 let OPT = { agents: [], choices: {} };
 const F = store.get("distill", {});   // remembered choices per agent: {agent, models: {agent: m}, efforts: {agent: e}, limit}
 F.models = F.models || {}; F.efforts = F.efforts || {};
@@ -749,18 +960,18 @@ function paintAgentForm() {
   const ch = OPT.choices[agent] || { models: [], efforts: [], recommended: {} };
   const model = F.models[agent] ?? ch.recommended.model ?? "";
   const known = ch.models.some((m) => m.value === model);
-  $("#f-model").innerHTML = ch.models.map((m) => `<option value="${esc(m.value)}">${esc(m.label)}</option>`).join("")
-    + `<option value="__custom">其他模型（自己填名字）…</option>`;
+  $("#f-model").innerHTML = ch.models.map((m) => `<option value="${esc(m.value)}">${esc(tr(m.label))}</option>`).join("")
+    + `<option value="__custom">${L("其他模型（自己填名字）…", "Other model (type its name)…")}</option>`;
   $("#f-model").value = known ? model : "__custom";
   $("#f-model-custom").hidden = known;
   $("#f-model-custom").value = known ? "" : model;
-  $("#f-model-custom").placeholder = agent === "codex" ? "Codex 的模型名" : "完整模型名或别名";
+  $("#f-model-custom").placeholder = agent === "codex" ? L("Codex 的模型名", "Codex model name") : L("完整模型名或别名", "Full model name or alias");
   $("#f-model-help").textContent = agent === "codex"
-    ? "列表来自你本机 Codex 的模型列表。写情节卡主要是把事实摘出来，不需要最强的模型。"
-    : "写情节卡主要是把事实摘出来，中等模型通常就够了。";
+    ? L("列表来自你本机 Codex 的模型列表。写情节卡主要是把事实摘出来，不需要最强的模型。", "This list comes from your local Codex. Writing cards is mostly picking out facts, so you don't need the strongest model.")
+    : L("写情节卡主要是把事实摘出来，中等模型通常就够了。", "Writing cards is mostly picking out facts, so a mid-size model is usually enough.");
   const path = (OPT.paths || {})[agent] || "";
-  $("#f-agent-help").textContent = (agent === "codex" && path.includes("ChatGPT.app") ? "使用 ChatGPT 桌面应用自带的 Codex。" : "")
-    + "用你在这个产品里已登录的账号和订阅额度，后台自动运行；不会在它的历史记录里留下这些运行。";
+  $("#f-agent-help").textContent = (agent === "codex" && path.includes("ChatGPT.app") ? L("使用 ChatGPT 桌面应用自带的 Codex。", "Uses the Codex bundled with the ChatGPT desktop app. ") : "")
+    + L("用你在这个产品里已登录的账号和订阅额度，后台自动运行；不会在它的历史记录里留下这些运行。", "Runs in the background with the account and subscription you're signed in with; these runs don't show up in its history.");
   paintEfforts();
   paintFallback();
 }
@@ -780,8 +991,10 @@ function paintMode() {
   const m = F.mode === "agent" ? "agent" : "direct";
   $$("#f-mode button").forEach((b) => b.classList.toggle("on", b.dataset.v === m));
   $("#f-mode-help").textContent = m === "direct"
-    ? "ctxport 先把对话压缩（代码只留“是干什么的”，长段翻译只留开头），几个对话打包成一次提问，直接拿回卡片。实测每个对话约 1–2 千 token。"
-    : "让 Agent 自己逐个读文件、写卡片，读得最全，但它每一步都会把之前的内容重发一遍，实测每个对话约 1.8 万 token，贵十倍以上。";
+    ? L("ctxport 先把对话压缩（代码只留“是干什么的”，长段翻译只留开头），几个对话打包成一次提问，直接拿回卡片。实测每个对话约 1–2 千 token。",
+        "ctxport shortens the chats first (code reduced to what it does, long pastes to their start) and sends several per question, getting cards straight back. About 1–2K tokens per chat in practice.")
+    : L("让 Agent 自己逐个读文件、写卡片，读得最全，但它每一步都会把之前的内容重发一遍，实测每个对话约 1.8 万 token，贵十倍以上。",
+        "The agent reads each file and writes the cards itself. Most thorough, but every step resends everything before it: about 18K tokens per chat, over ten times the cost.");
 }
 $("#f-mode").onclick = (e) => {
   const b = e.target.closest("[data-v]"); if (!b) return;
@@ -799,8 +1012,10 @@ function paintFallback() {
   $("#f-fb-row").hidden = !fb;
   if (fb) {
     const ch = OPT.choices[fb.agent];
-    const m = (ch.models.find((x) => x.value === fb.model) || {}).label || fb.model || "默认模型";
-    $("#f-fb-label").textContent = `换成 ${AGENT_LABEL[fb.agent] || fb.agent} 接着跑（${m.split("：")[0]}${fb.effort ? " · " + fb.effort : ""}；在“用哪个”里切过去可以改它的模型）`;
+    const m = (ch.models.find((x) => x.value === fb.model) || {}).label || fb.model || L("默认模型", "default model");
+    const mm = `${tr(m).split(/：|: /)[0]}${fb.effort ? " · " + fb.effort : ""}`;
+    $("#f-fb-label").textContent = L(`换成 ${AGENT_LABEL[fb.agent] || fb.agent} 接着跑（${mm}；在“用哪个”里切过去可以改它的模型）`,
+      `Continue with ${AGENT_LABEL[fb.agent] || fb.agent} (${mm}; switch to it under “Agent” to change its model)`);
   }
   $("#f-fb").checked = !!fb && !!F.fallback;
   $("#f-wait").checked = !!F.wait;
@@ -856,54 +1071,71 @@ $("#f-par").onclick = (e) => {
   $$("#f-par button").forEach((x) => x.classList.toggle("on", x === b)); remember(); refreshPreview();
 };
 
-const fmtTok = (n) => n >= 1e8 ? (n / 1e8).toFixed(1) + " 亿" : n >= 1e4 ? (n / 1e4).toFixed(n >= 1e5 ? 0 : 1) + " 万" : fmt(Math.round(n));
+const fmtTok = (n) => EN
+  ? (n >= 1e9 ? (n / 1e9).toFixed(1) + "B" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e4 ? (n / 1e3).toFixed(n >= 1e5 ? 0 : 1) + "K" : fmt(Math.round(n)))
+  : (n >= 1e8 ? (n / 1e8).toFixed(1) + " 亿" : n >= 1e4 ? (n / 1e4).toFixed(n >= 1e5 ? 0 : 1) + " 万" : fmt(Math.round(n)));
 let previewSeq = 0;
 async function refreshPreview() {
   if (!OPT.agents.length) return;
   const seq = ++previewSeq;
   const v = formValues();
-  $("#f-preview").textContent = "计算中…";
+  $("#f-preview").textContent = L("计算中…", "Calculating…");
   try {
     const q = new URLSearchParams({ limit: v.limit, agent: v.agent || "", model: v.model, effort: v.effort, mode: v.mode });
     const p = await api("/api/distill/preview?" + q);
     if (seq !== previewSeq) return;
     if (!p.conversations) {
-      $("#f-preview").innerHTML = `这个范围里的对话都已经有情节卡了。${p.cards ? "可以扩大范围，或直接点“生成档案”。" : ""}`;
+      $("#f-preview").innerHTML = L(`这个范围里的对话都已经有情节卡了。${p.cards ? "可以扩大范围，或直接点“生成档案”。" : ""}`,
+        `Every chat in this scope already has a card.${p.cards ? " Widen the scope, or click “Build profile”." : ""}`);
     } else {
       const par = Math.min(v.parallel, p.batches);
-      const unit = v.mode === "agent" ? "批" : "组（每组一次提问）";
-      let html = `将处理 <b id="f-n">${fmt(p.conversations)}</b> 个对话，分 <b>${fmt(p.batches)}</b> ${unit}${par > 1 ? `，同时跑 ${par} 个` : ""}。`
+      const unit = v.mode === "agent" ? L("批", "batches") : L("组（每组一次提问）", "groups (one question each)");
+      let html = EN
+        ? `Will process <b id="f-n">${fmt(p.conversations)}</b> chats in <b>${fmt(p.batches)}</b> ${unit}${par > 1 ? `, ${par} at a time` : ""}.`
+          + `<br>${v.mode === "agent" ? "The chats are" : "The shortened chats are"} about <b>${fmtTok(p.tokens_in)}</b> input tokens, with about ${fmtTok(p.tokens_out)} output tokens (estimated from length).`
+        : `将处理 <b id="f-n">${fmt(p.conversations)}</b> 个对话，分 <b>${fmt(p.batches)}</b> ${unit}${par > 1 ? `，同时跑 ${par} 个` : ""}。`
         + `<br>${v.mode === "agent" ? "对话内容" : "压缩后的内容"}约 <b>${fmtTok(p.tokens_in)}</b> token 输入、约 ${fmtTok(p.tokens_out)} token 输出（按字数估算）。`;
       const m = p.measured;
       if (m) {
         const pr = m.projected;
         const all = pr.input + pr.cache_read + pr.cache_write + pr.output;
-        html += `<br><b>按你之前 ${m.batches} ${v.mode === "agent" ? "批" : "组"}的实测</b>（${esc(m.model || "默认模型")}${m.effort ? " · " + esc(m.effort) : ""}），`
+        const who = `${esc(m.model || L("默认模型", "default model"))}${m.effort ? " · " + esc(m.effort) : ""}`;
+        html += EN
+          ? `<br><b>Based on your last ${m.batches} ${v.mode === "agent" ? "batches" : "groups"}</b> (${who}), `
+            + `this run should take about <b>${fmtTok(all)}</b> tokens: ${fmtTok(pr.input + pr.cache_write)} new input, ${fmtTok(pr.cache_read)} cache reads, ${fmtTok(pr.output)} output.`
+          : `<br><b>按你之前 ${m.batches} ${v.mode === "agent" ? "批" : "组"}的实测</b>（${who}），`
           + `这次预计共约 <b>${fmtTok(all)}</b> token：新输入 ${fmtTok(pr.input + pr.cache_write)}、缓存读取 ${fmtTok(pr.cache_read)}、输出 ${fmtTok(pr.output)}。`;
       } else {
         html += v.mode === "agent"
-          ? `<br><span class="note">Agent 自己还有开销：系统提示，以及读写文件时每一步都带上的上下文（多数是便宜的缓存读取），实际计入额度的量通常是上面的几倍。跑完第一批后，这里会改成按实测预估。</span>`
-          : `<br><span class="note">每次提问还有一点固定开销（系统提示）。跑完第一组后，这里会改成按实测预估。</span>`;
+          ? `<br><span class="note">${L("Agent 自己还有开销：系统提示，以及读写文件时每一步都带上的上下文（多数是便宜的缓存读取），实际计入额度的量通常是上面的几倍。跑完第一批后，这里会改成按实测预估。",
+              "The agent adds its own overhead: the system prompt and the context it carries on every file step (mostly cheap cache reads), so the quota used is usually several times the above. After the first batch this switches to a measured estimate.")}</span>`
+          : `<br><span class="note">${L("每次提问还有一点固定开销（系统提示）。跑完第一组后，这里会改成按实测预估。",
+              "Each question also has a small fixed overhead (the system prompt). After the first group this switches to a measured estimate.")}</span>`;
       }
-      if (p.cards) html += `<br><span class="note">已有 ${fmt(p.cards)} 张情节卡，内容没变的对话会跳过。</span>`;
+      if (p.cards) html += `<br><span class="note">${L(`已有 ${fmt(p.cards)} 张情节卡，内容没变的对话会跳过。`, `${fmt(p.cards)} cards already exist; unchanged chats are skipped.`)}</span>`;
       $("#f-preview").innerHTML = html;
     }
     $("#f-start").disabled = !p.conversations || S.running;
-  } catch (e) { $("#f-preview").textContent = e.message; }
+  } catch (e) { $("#f-preview").textContent = tr(e.message); }
 }
 
 $("#f-start").onclick = () => run($("#f-start"), async () => {
   const v = formValues();
-  if ($("#f-model").value === "__custom" && !v.model) throw new Error("请填写模型名，或选一个列表里的模型");
+  if ($("#f-model").value === "__custom" && !v.model) throw new Error(L("请填写模型名，或选一个列表里的模型", "Type a model name, or pick one from the list"));
   const name = AGENT_LABEL[v.agent] || v.agent;
-  if (!confirm(`用你自己的 ${name}${v.model ? `（${v.model}）` : ""}在后台处理 ${$("#f-n")?.textContent || ""} 个对话？\n\n`
+  const n = $("#f-n")?.textContent || "";
+  if (!confirm(EN
+    ? `Process ${n} chats in the background with your own ${name}${v.model ? ` (${v.model})` : ""}?\n\n`
+      + `This uses your ${name} quota${v.fallback ? `; when it runs out, ${AGENT_LABEL[v.fallback.agent]} continues and uses its quota too` : ""}`
+      + `${v.wait ? "; when everything is used up it waits for the quota to reset and continues" : ""}. You can click “Stop” any time; starting again picks up where it left off.`
+    : `用你自己的 ${name}${v.model ? `（${v.model}）` : ""}在后台处理 ${n} 个对话？\n\n`
     + `会消耗你在 ${name} 里的使用额度${v.fallback ? `；额度用完后换成 ${AGENT_LABEL[v.fallback.agent]} 接着跑，也会消耗它的额度` : ""}`
     + `${v.wait ? "；都用完了会等额度恢复后自动继续" : ""}。可以随时点“停止”，之后再点开始会接着做。`)) return;
   remember();
   await api("/api/distill/agent", { ...v, confirm: true });
   S.running = true; paintRunning(); setTimeout(loadDistill, 600);
 });
-$("#f-stop").onclick = () => run($("#f-stop"), async () => { await api("/api/distill/stop", {}); toast("会在当前这一批结束前停下，已写好的卡片都会保留"); });
+$("#f-stop").onclick = () => run($("#f-stop"), async () => { await api("/api/distill/stop", {}); toast(L("会在当前这一批结束前停下，已写好的卡片都会保留", "It stops before the current batch ends; every card written so far is kept")); });
 
 function paintRunning(st) {
   $("#f-stop").hidden = !S.running;
@@ -912,21 +1144,23 @@ function paintRunning(st) {
   $("#f-progress").hidden = !S.running && !(pg && pg.total);
   if (pg && pg.total) $("#f-progress i").style.width = Math.round(100 * pg.done / pg.total) + "%";
   const u = st && st.usage;
-  const used = u ? `已用 ${fmtTok(u.input + u.cache_write)} 新输入 · ${fmtTok(u.cache_read)} 缓存读取 · ${fmtTok(u.output)} 输出` : "";
+  const used = u ? L(`已用 ${fmtTok(u.input + u.cache_write)} 新输入 · ${fmtTok(u.cache_read)} 缓存读取 · ${fmtTok(u.output)} 输出`,
+    `used ${fmtTok(u.input + u.cache_write)} new input · ${fmtTok(u.cache_read)} cache reads · ${fmtTok(u.output)} output`) : "";
   const waiting = st && st.waiting_until;
   if (S.running && waiting) {
-    const at = new Date(waiting * 1000).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-    $("#f-state").textContent = `额度用完了，等到 ${at} 自动继续 · 电脑保持不睡眠`;
+    const at = new Date(waiting * 1000).toLocaleTimeString(EN ? "en-US" : "zh-CN", { hour: "2-digit", minute: "2-digit" });
+    $("#f-state").textContent = L(`额度用完了，等到 ${at} 自动继续 · 电脑保持不睡眠`, `Out of quota; continuing at ${at} · keeping the computer awake`);
     return;
   }
   const who = st && st.agent_now && OPT.agents.length > 1 ? (AGENT_LABEL[st.agent_now] || st.agent_now) + " · " : "";
-  $("#f-state").textContent = S.running ? who + (pg && pg.total ? `已完成 ${pg.done} / ${pg.total} 批` : "准备中…")
-    + (used ? " · " + used : "") : used ? "上次运行" + used : "";
+  $("#f-state").textContent = S.running ? who + (pg && pg.total ? L(`已完成 ${pg.done} / ${pg.total} 批`, `${pg.done} / ${pg.total} batches done`) : L("准备中…", "Preparing…"))
+    + (used ? " · " + used : "") : used ? L("上次运行", "Last run: ") + used : "";
 }
 
 $("#d-folder").onclick = () => run($("#d-folder"), async () => {
   const r = await api("/api/distill/folder", {});
-  toast(`任务文件夹已打开（${r.conversations} 个对话待处理）。在 Agent 里打开它，说“按 TASK.md 处理 conversations/ 里还没有卡片的文件”。`);
+  toast(L(`任务文件夹已打开（${r.conversations} 个对话待处理）。在 Agent 里打开它，说“按 TASK.md 处理 conversations/ 里还没有卡片的文件”。`,
+    `The task folder is open (${r.conversations} chats to process). Open it in your agent and say “Follow TASK.md and process every file in conversations/ that has no card yet”.`));
 });
 $("#d-build").onclick = () => run($("#d-build"), async () => { await api("/api/distill/build", {}); S.running = true; paintGuide(); setTimeout(loadDistill, 600); });
 $("#d-view").onclick = () => openProfile();
@@ -936,19 +1170,19 @@ $("#r-reveal").onclick = () => run($("#r-reveal"), async () => {
 $("#w-open").onclick = () => run($("#w-open"), async () => {
   const r = await api("/api/distill/web?limit=" + encodeURIComponent($("#w-limit").value));
   $("#web-flow").hidden = false;
-  $("#w-count").textContent = r.batches.length ? `共 ${r.batches.length} 批` : "没有需要处理的对话";
-  $("#w-batch").innerHTML = r.batches.map((b) => `<option value="${esc(b.name)}">第 ${parseInt(b.name)} 批（${fmt(b.chars)} 字）</option>`).join("");
+  $("#w-count").textContent = r.batches.length ? L(`共 ${r.batches.length} 批`, `${r.batches.length} batches`) : L("没有需要处理的对话", "Nothing to process");
+  $("#w-batch").innerHTML = r.batches.map((b) => `<option value="${esc(b.name)}">${L(`第 ${parseInt(b.name)} 批（${fmt(b.chars)} 字）`, `Batch ${parseInt(b.name)} (${fmt(b.chars)} chars)`)}</option>`).join("");
 });
 $("#w-copy").onclick = () => run($("#w-copy"), async () => {
   const { text } = await api("/api/distill/web/prompt?name=" + encodeURIComponent($("#w-batch").value));
   await navigator.clipboard.writeText(text);
-  toast("已复制，粘贴到网页版 AI 的新对话里");
+  toast(L("已复制，粘贴到网页版 AI 的新对话里", "Copied; paste it into a new chat on the web AI"));
 });
 $("#w-chatgpt").onclick = () => api("/api/open-url", { url: "https://chatgpt.com/" }).catch((e) => toast(e.message, true));
 $("#w-claude").onclick = () => api("/api/open-url", { url: "https://claude.ai/new" }).catch((e) => toast(e.message, true));
 $("#w-submit").onclick = () => run($("#w-submit"), async () => {
   const r = await api("/api/distill/web/answer", { name: $("#w-batch").value, reply: $("#w-reply").value });
-  toast(`已导入 ${r.cards} 张情节卡`);
+  toast(L(`已导入 ${r.cards} 张情节卡`, `Imported ${r.cards} cards`));
   $("#w-reply").value = "";
   const sel = $("#w-batch");
   if (sel.selectedIndex < sel.options.length - 1) sel.selectedIndex += 1;
@@ -963,13 +1197,14 @@ async function loadDistill() {
   S.sizes = st.sizes || {}; S.cov = (st.last_run && st.last_run.coverage) || {};
   paintSize();
   $("#d-status").innerHTML = st.profile_exists
-    ? `<div class="big">${fmt(st.profile_chars)} <span class="note">字</span></div>` +
-      (lr ? `来自 ${fmt((lr.cards_cached || 0) + (lr.cards_new || 0))} 张情节卡（共 ${fmt(lr.conversations)} 个对话）· ${fmt(lr.facts_l1)} 条事实，合并成 ${fmt(lr.facts_l2)} 条<br>完整版覆盖率 ${pct(lr.coverage.full)} · ChatGPT 精简版覆盖 ${pct(lr.coverage.chatgpt_1400)}` : "")
-    : "还没有档案。选好方式开始提炼，完成后会自动生成。";
-  $("#d-run").textContent = lr && lr.started ? "更新于 " + new Date(lr.started * 1000).toLocaleString("zh-CN") : "";
-  $("#d-lines").textContent = (st.lines || []).slice(-12).join("\n") + (st.error ? "\n错误：" + st.error : "");
+    ? `<div class="big">${fmt(st.profile_chars)} <span class="note">${L("字", "chars")}</span></div>` +
+      (lr ? L(`来自 ${fmt((lr.cards_cached || 0) + (lr.cards_new || 0))} 张情节卡（共 ${fmt(lr.conversations)} 个对话）· ${fmt(lr.facts_l1)} 条事实，合并成 ${fmt(lr.facts_l2)} 条<br>完整版覆盖率 ${pct(lr.coverage.full)} · ChatGPT 精简版覆盖 ${pct(lr.coverage.chatgpt_1400)}`,
+              `From ${fmt((lr.cards_cached || 0) + (lr.cards_new || 0))} cards (${fmt(lr.conversations)} chats) · ${fmt(lr.facts_l1)} facts merged into ${fmt(lr.facts_l2)}<br>Full version covers ${pct(lr.coverage.full)} · ChatGPT-size version covers ${pct(lr.coverage.chatgpt_1400)}`) : "")
+    : L("还没有档案。选好方式开始提炼，完成后会自动生成。", "No profile yet. Pick a mode and start distilling; the profile is built when it finishes.");
+  $("#d-run").textContent = lr && lr.started ? L("更新于 ", "Updated ") + new Date(lr.started * 1000).toLocaleString(EN ? "en-US" : "zh-CN") : "";
+  $("#d-lines").textContent = (st.lines || []).slice(-12).join("\n") + (st.error ? L("\n错误：", "\nError: ") + tr(st.error) : "");
   $("#d-view").disabled = !st.profile_exists;
-  $("#r-prof").textContent = st.profile_exists ? `${fmt(st.profile_chars)} 字` : "还没有";
+  $("#r-prof").textContent = st.profile_exists ? L(`${fmt(st.profile_chars)} 字`, `${fmt(st.profile_chars)} chars`) : L("还没有", "None yet");
   $("#r-prof").className = "badge " + (st.profile_exists ? "ok" : "");
   paintRunning(st);
   if (!st.running && (S.pending === null || wasRunning)) {
@@ -995,7 +1230,17 @@ function paintNext(st) {
   const left = S.pending || 0;
   const halted = S.halted;
   box.className = "nextbox" + (halted ? " warn" : "");
-  box.innerHTML = (halted
+  box.innerHTML = EN ? (halted
+      ? `<b class="t">Out of quota: distilling is paused</b><div class="why">${esc(halted)}</div>
+         <div>All ${fmt(cards)} cards written so far are kept and the profile is built from them. When the quota resets, click “Start distilling” again and only the remaining ${fmt(left)} chats are processed.
+         You can also tick an option under “When quota runs out”: continue with the other agent, or wait for the quota to reset.</div>`
+      : `<b class="t">Your profile is ready</b>
+         <div>${S.pending === null ? `Built from the cards of ${fmt(cards)} chats. <span class="note">Counting chats not distilled yet…</span>`
+           : left ? `Built from ${fmt(cards)} chats; ${fmt(left)} chats aren't distilled yet (failed or outside this scope); you can add them any time.` : `Every chat is distilled.`}</div>`)
+    + `<div>Next: look at the profile in step 3, then import it into the AIs you use in step 4.</div>
+       <div class="actions"><button class="primary" data-goto="4">Import (step 4)</button><button data-view-profile>View profile</button>
+       ${left && !halted ? `<button data-continue>Distill the remaining ${fmt(left)}</button>` : ""}</div>`
+  : (halted
       ? `<b class="t">额度用完了，提炼已暂停</b><div class="why">${esc(halted)}</div>
          <div>已经写好的 ${fmt(cards)} 张情节卡都保留了，档案也按它们生成好了。额度恢复后再点“开始提炼”，只会补剩下的 ${fmt(left)} 个对话。
          也可以勾上“额度用完时”的选项：换成另一个 Agent 接着跑，或者等额度恢复后自动继续。</div>`
@@ -1010,7 +1255,11 @@ function paintNext(st) {
 
 // ------------------------------------------------------------ step 3: review drawer
 let drTab = "candidate", drRows = [], drMode = "mem", profileText = "";
-const HELP = {
+const HELP = EN ? {
+  candidate: "Click “Keep” to accept a memory, “Drop” to discard it, “Edit” to change its text. Only accepted memories are imported.",
+  accepted: "These are imported into other AIs. Click “Drop” to take one back.",
+  profile: "Step 4 imports the version you picked there (compact by default). To edit it, click “Show in Finder” in step 3 and edit that profile file.",
+} : {
   candidate: "点“保留”确认一条，“不要”丢掉，“改”可以直接修改文字。只有已确认的记忆会被导入。",
   accepted: "这些会被导入到其他 AI。点“不要”可以撤下。",
   profile: "第 4 步导入的是你在那里选的版本（默认精简）。想删改内容：点第 3 步的“在访达中显示”，直接编辑对应的 profile 文件后保存。",
@@ -1020,13 +1269,13 @@ async function openProfile(size) {
   size = size || S.size || "compact";
   const p = await api("/api/distill/profile?size=" + size).catch((e) => { toast(e.message, true); return null; });
   if (!p) return;
-  if (!p.text) { toast("还没有档案，先完成第 2 步", true); return; }
+  if (!p.text) { toast(L("还没有档案，先完成第 2 步", "No profile yet; finish step 2 first"), true); return; }
   drMode = "profile"; profileText = p.text;
   $("#drawer").classList.add("open");
   $("#dr-tabs").hidden = true;
   $("#dr-sizes").hidden = false;
   $$("#dr-sizes button").forEach((b) => b.classList.toggle("on", b.dataset.psize === size));
-  $("#dr-title").textContent = `记忆档案 · ${SIZE_LABEL[size]}版（${fmt(p.text.length)} 字）`;
+  $("#dr-title").textContent = L(`记忆档案 · ${SIZE_LABEL[size]}版（${fmt(p.text.length)} 字）`, `Memory profile · ${SIZE_LABEL[size]} (${fmt(p.text.length)} chars)`);
   $("#dr-help").textContent = HELP.profile;
   paintDrawer();
 }
@@ -1040,9 +1289,9 @@ async function loadDrawer(tab) {
   $("#dr-tabs").hidden = false;
   $("#dr-sizes").hidden = true;
   $$("#dr-tabs [data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
-  $("#dr-title").textContent = tab === "candidate" ? "待审核的记忆" : "已确认的记忆";
+  $("#dr-title").textContent = tab === "candidate" ? L("待审核的记忆", "Memories to review") : L("已确认的记忆", "Accepted memories");
   $("#dr-help").textContent = HELP[tab];
-  $("#dr-list").innerHTML = `<div class="empty">加载中…</div>`;
+  $("#dr-list").innerHTML = `<div class="empty">${L("加载中…", "Loading…")}</div>`;
   drRows = (await api("/api/memories?status=" + tab)).memories;
   paintDrawer();
 }
@@ -1061,15 +1310,15 @@ function paintDrawer() {
   const rows = visibleRows().slice(0, 400);
   $("#dr-list").innerHTML = rows.length ? rows.map((m) => `<div class="mem" data-id="${esc(m.id)}">
       <div><div class="t">${esc(m.text)}</div>
-      <div class="m">${esc(m.category)} · ${esc(PLATFORM[m.platform] || m.platform)}${m.seen > 1 ? ` · 出现 ${m.seen} 次` : ""}${m.scope !== "global" ? " · " + esc(m.scope) : ""}</div></div>
-      <div class="b">${drTab === "candidate" ? `<button data-keep>保留</button>` : ""}
-      <button data-edit>改</button><button class="ghost" data-drop>不要</button></div></div>`).join("")
-    : `<div class="empty">没有记忆</div>`;
+      <div class="m">${esc(m.category)} · ${esc(PLATFORM[m.platform] || m.platform)}${m.seen > 1 ? L(` · 出现 ${m.seen} 次`, ` · seen ${m.seen} times`) : ""}${m.scope !== "global" ? " · " + esc(m.scope) : ""}</div></div>
+      <div class="b">${drTab === "candidate" ? `<button data-keep>${L("保留", "Keep")}</button>` : ""}
+      <button data-edit>${L("改", "Edit")}</button><button class="ghost" data-drop>${L("不要", "Drop")}</button></div></div>`).join("")
+    : `<div class="empty">${L("没有记忆", "No memories")}</div>`;
   $$("#dr-list .mem").forEach((r) => {
     const t = r.querySelector(".t");
     if (t.scrollHeight > t.clientHeight + 2) r.classList.add("long");
   });
-  if (visibleRows().length > 400) $("#dr-list").insertAdjacentHTML("beforeend", `<div class="empty">只显示前 400 条，用搜索缩小范围</div>`);
+  if (visibleRows().length > 400) $("#dr-list").insertAdjacentHTML("beforeend", `<div class="empty">${L("只显示前 400 条，用搜索缩小范围", "Showing the first 400; search to narrow it down")}</div>`);
 }
 $("#dr-list").addEventListener("click", async (ev) => {
   const row = ev.target.closest(".mem");
@@ -1083,17 +1332,18 @@ $("#dr-list").addEventListener("click", async (ev) => {
     else if (ev.target.matches("[data-edit]")) {
       if (t.isContentEditable) {
         await api("/api/memories/update", { id, text: t.innerText.trim(), status: "accepted" });
-        t.contentEditable = "false"; ev.target.textContent = "改"; toast("已保存并确认");
-      } else { t.contentEditable = "true"; t.focus(); ev.target.textContent = "存"; }
+        t.contentEditable = "false"; ev.target.textContent = L("改", "Edit"); toast(L("已保存并确认", "Saved and accepted"));
+      } else { t.contentEditable = "true"; t.focus(); ev.target.textContent = L("存", "Save"); }
     }
-  } catch (e) { toast(e.message, true); }
+  } catch (e) { toast(tr(e.message), true); }
 });
 async function bulk(status) {
   const ids = visibleRows().map((m) => m.id);
   if (!ids.length) return;
-  if (!confirm(`把列出的 ${ids.length} 条记忆全部标为“${status === "accepted" ? "已确认" : "不要"}”？`)) return;
+  if (!confirm(L(`把列出的 ${ids.length} 条记忆全部标为“${status === "accepted" ? "已确认" : "不要"}”？`,
+    `Mark all ${ids.length} listed memories as ${status === "accepted" ? "accepted" : "dropped"}?`))) return;
   await api("/api/memories/update", { ids, status });
-  toast(`已处理 ${ids.length} 条`);
+  toast(L(`已处理 ${ids.length} 条`, `Updated ${ids.length}`));
   loadDrawer(drTab);
 }
 $("#dr-all-acc").onclick = () => bulk("accepted").catch((e) => toast(e.message, true));
@@ -1101,7 +1351,7 @@ $("#dr-all-rej").onclick = () => bulk("rejected").catch((e) => toast(e.message, 
 
 // ------------------------------------------------------------ start
 (async () => {
-  if (!TOKEN) { toast("缺少访问令牌：请从桌面的 ctxport 图标或 `ctxport app` 打开这个页面", true); return; }
+  if (!TOKEN) { toast(L("缺少访问令牌：请从桌面的 ctxport 图标或 `ctxport app` 打开这个页面", "Missing access token: open this page from the ctxport desktop icon or `ctxport app`"), true); return; }
   try { S.size = (await api("/api/prefs")).profile_size || "compact"; } catch { /* default */ }
   try { await Promise.all([loadOverview(), loadTargets(), loadAgents(), loadDistill(), loadWebData()]); } catch (e) { toast(e.message, true); }
 })();

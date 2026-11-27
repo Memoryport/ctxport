@@ -36,13 +36,14 @@
   .hint { margin-top:10px; font-size:12px; color:var(--muted); }
   code { background:var(--chip); padding:1px 5px; border-radius:4px; }
   .pair { margin:10px 0; }
+  .lang { font-size:11px; font-weight:500; padding:1px 6px; margin-left:4px; border-radius:6px; background:var(--chip); color:var(--muted); vertical-align:middle; }
   .pairrow { display:flex; gap:6px; margin-top:6px; }
   .pairrow input { flex:1; font:inherit; letter-spacing:1px; text-transform:uppercase; }
 </style>
 </head>
 <body>
 <header>
-  <h1>ctxport</h1>
+  <h1>ctxport <button class="lang" id="lang" type="button" title="切换语言 / Switch language">EN</button></h1>
   <label class="switch" title="暂停后不会读取任何网站；正在进行的同步会停下，已保存的不会丢"><input type="checkbox" id="pause"><span id="pause-label">读取中</span></label>
   <div class="srv"><span id="dot" class="dot"></span><span id="srv">检查本地服务…</span></div>
 </header>

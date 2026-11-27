@@ -7,6 +7,9 @@ All notable changes to ctxport are listed here. The format follows
 ## [Unreleased]
 
 ### Added
+- English for `ctxport app` and the browser extension popup: a 中文 / English button in the header switches the
+  language (remembered; the default follows the browser's language). Chinese stays the source text; progress log
+  lines from a distillation run are still in Chinese.
 - `ctxport app` is now a guided four-step page (collect → distill → review → import) with a "next step" card and
   how-to text on every step. Distilling with Claude Code or Codex lets you pick the model, the reasoning effort
   (`--effort` / `model_reasoning_effort`) and how many recent conversations to process, previews the work before it
