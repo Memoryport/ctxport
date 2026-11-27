@@ -6,6 +6,8 @@ All notable changes to ctxport are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-27
+
 ### Added
 - English for `ctxport app` and the browser extension popup: a 中文 / English button in the header switches the
   language (remembered; the default follows the browser's language). Chinese stays the source text; progress log
@@ -212,5 +214,6 @@ First public release: importers and exporters for ChatGPT, Claude.ai, Claude Cod
 Gemini web, Google Antigravity, Cherry Studio and Chatbox; local SQLite store with full-text search;
 memory extraction and review; MCP server; and the browser companion extension.
 
-[Unreleased]: https://github.com/Memoryport/ctxport/compare/cca1cc6...HEAD
+[Unreleased]: https://github.com/Memoryport/ctxport/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Memoryport/ctxport/compare/cca1cc6...v0.2.0
 [0.1.0]: https://github.com/Memoryport/ctxport/commit/cca1cc6

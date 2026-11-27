@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ctxport companion",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "One-click, local-only sync of your own ChatGPT, Claude.ai and Gemini conversations into ctxport on this computer.",
   "permissions": ["storage", "tabs", "alarms", "scripting"],
   "host_permissions": [

@@ -4,7 +4,9 @@ name: Release
 # the wheel and the browser extension zip attached (so users never need to clone the repository).
 # Publishing uses PyPI trusted publishing (no API token in the repo). One-time setup on pypi.org:
 #   Publishing → Add a new pending publisher → owner "Memoryport", repository "ctxport",
-#   workflow "release.yml", environment "pypi". Also create the "pypi" environment in the repo settings.
+#   workflow "release.yml", environment "pypi". Also create the "pypi" environment in the repo settings, then set
+#   the repository variable PUBLISH_TO_PYPI to "true" (Settings → Secrets and variables → Actions → Variables).
+#   Until then the PyPI step is skipped and the GitHub release is created on its own.
 
 on:
   push:
@@ -44,6 +46,7 @@ jobs:
 
   publish:
     needs: build
+    if: vars.PUBLISH_TO_PYPI == 'true'
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -72,6 +75,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "ctxport $GITHUB_REF_NAME" \
-            --notes "Install the CLI: \`pipx install ctxport\` (or download the .whl below and \`pipx install ./ctxport-*.whl\`).
+            --notes "Install the CLI: download the .whl below and run \`pipx install ./ctxport-${GITHUB_REF_NAME#v}-py3-none-any.whl\`, or \`pipx install git+https://github.com/$GITHUB_REPOSITORY@$GITHUB_REF_NAME\`. With the MCP server: add \`[mcp]\`, e.g. \`pipx install \"ctxport[mcp] @ git+https://github.com/$GITHUB_REPOSITORY@$GITHUB_REF_NAME\"\`.
           Browser extension: download ctxport-extension-*.zip below, unzip it, then load the folder in chrome://extensions or edge://extensions with Developer mode on.
           See CHANGELOG.md for what changed."

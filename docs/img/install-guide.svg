@@ -86,12 +86,12 @@
   <rect class="win" x="44" y="392" width="197" height="150" rx="7"/>
   <path class="bar" d="M44 399a7 7 0 0 1 7-7h183a7 7 0 0 1 7 7v15H44z"/>
   <text class="ui" x="54" y="407">github.com/…/releases</text>
-  <text class="uib" x="54" y="434">ctxport v0.1.0</text>
+  <text class="uib" x="54" y="434">ctxport v0.2.0</text>
   <text class="ui" x="54" y="454">Assets</text>
   <rect x="52" y="462" width="181" height="24" rx="5" fill="#eef2ff"/>
-  <text class="ui" x="60" y="478" fill="#2f5bea" style="fill:#2f5bea">ctxport-extension-0.1.0.zip</text>
+  <text class="ui" x="60" y="478" fill="#2f5bea" style="fill:#2f5bea">ctxport-extension-0.2.0.zip</text>
   <rect class="hl" x="50" y="460" width="185" height="28" rx="6"/>
-  <text class="ui" x="60" y="506">ctxport-0.1.0-py3-none-any.whl</text>
+  <text class="ui" x="60" y="506">ctxport-0.2.0-py3-none-any.whl</text>
   <text class="ui" x="60" y="526">Source code (zip)</text>
   <text class="note" x="44" y="566">From the Releases page (14 KB).</text>
   <text class="note" x="44" y="584">Unzip it anywhere you like.</text>
@@ -115,7 +115,7 @@
   <rect class="hl" x="294" y="453" width="106" height="30" rx="7"/>
   <rect x="297" y="494" width="177" height="38" rx="5" fill="#f7f8fb" stroke="#e3e6ee"/>
   <text class="uib" x="307" y="510">ctxport companion</text>
-  <text class="ui" x="307" y="525">0.1.0</text>
+  <text class="ui" x="307" y="525">0.2.0</text>
   <text class="note" x="287" y="566">Turn on Developer mode, click</text>
   <text class="note" x="287" y="584">Load unpacked, pick the folder.</text>
   <text class="note" x="287" y="602">打开开发者模式→加载解压缩的扩展</text>
