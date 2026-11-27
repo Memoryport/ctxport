@@ -91,8 +91,9 @@ def test_deterministic_and_free_of_the_authors_profile(built, tmp_path):
     again = G.write(G.generate(personas=4, conversations=60, days=300, seed=5), tmp_path)
     for f in ("conversations.jsonl", "questions.jsonl", "facts.json"):
         assert (out / "p00" / f).read_bytes() == (tmp_path / "p00" / f).read_bytes()
-    assert again["questions"] == json.loads((out / "manifest.json").read_text())["questions"]
-    text = " ".join((out / p / "conversations.jsonl").read_text().lower() for p in ("p00", "p01", "p02", "p03"))
+    assert again["questions"] == json.loads((out / "manifest.json").read_text(encoding="utf-8"))["questions"]
+    text = " ".join((out / p / "conversations.jsonl").read_text(encoding="utf-8").lower()
+                    for p in ("p00", "p01", "p02", "p03"))
     for canary in ("waterloo", "滑铁卢", "toronto", "racket", "ray tian", "ctxport", "nanyang", "guodong"):
         assert canary not in text
 

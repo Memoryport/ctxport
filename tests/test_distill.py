@@ -544,6 +544,7 @@ def test_balanced_profile_covers_every_category():
     assert work[-1].startswith(f"- [{D._d(1_790_000_000)}]")
 
 
+@pytest.mark.skipif(__import__("os").name == "nt", reason="script stand-ins for the agent CLIs")
 def test_profile_sizes_are_written_and_exports_default_to_compact(store, tmp_path, monkeypatch):
     from ctxport.adapters import get_exporter
     from ctxport.adapters.base import ExportOptions
@@ -560,6 +561,7 @@ def test_profile_sizes_are_written_and_exports_default_to_compact(store, tmp_pat
     assert "search_memory" in body and "search_memory" not in full     # compact by default, full on request
 
 
+@pytest.mark.skipif(__import__("os").name == "nt", reason="script stand-ins for the agent CLIs")
 def test_mcp_search_memory(store, tmp_path, monkeypatch):
     from ctxport import mcp_server
     assert "No distilled profile" in mcp_server.search_memory("fact")
