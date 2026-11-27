@@ -27,9 +27,9 @@ class SyncReport:
     warnings: list = field(default_factory=list)
 
     def nothing_imported(self) -> bool:
-        """True when this import found nothing to import: no unit at all, or every unit it read was empty
-        (wrong platform, an unrelated or broken file). Unchanged units skipped by a re-run do not count."""
-        return self.units == 0 or (self.imported > 0 and self.imported == self.empty and self.skipped == 0)
+        """True when this import found nothing to import: no unit at all, or every unit failed to load or was
+        empty (wrong platform, an unrelated or broken file). Unchanged units skipped by a re-run do not count."""
+        return self.units == 0 or (self.skipped == 0 and self.imported == self.empty)
 
 
 def import_unit(store: Store, imp: Importer, unit: Path, force: bool, report: SyncReport) -> None:

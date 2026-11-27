@@ -50,7 +50,7 @@ def render_memories_md(memories: list, redact: bool = True, heading_level: int =
     groups = group_memories(memories)
     for scope in sorted(groups, key=lambda s: (s != "global", s)):
         if scope != "global":
-            lines += [f"{h} Project: {scope.split(':', 1)[-1]}", ""]
+            lines += [f"{h} Project: {project_name(scope)}", ""]
         for cat in sorted(groups[scope], key=_cat_key):
             hh = h if scope == "global" else h + "#"
             lines.append(f"{hh} {CATEGORY_TITLES.get(cat, cat)}")

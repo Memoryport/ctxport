@@ -21,6 +21,15 @@ def test_import_that_reads_nothing_fails(tmp_path, capsys, name, content):
     assert main(["import", "chatgpt", str(tmp_path / "missing.json")]) == 1
 
 
+@pytest.mark.parametrize("platform", ["chatgpt", "claude-ai", "openai-messages", "gemini-web", "chatbox",
+                                      "cherry-studio", "ctxport-jsonl"])
+def test_broken_json_fails_on_every_platform(tmp_path, capsys, platform):
+    f = tmp_path / "bad.json"
+    f.write_text("{broken", encoding="utf-8")
+    assert main(["import", platform, str(f)]) == 1
+    assert "nothing was imported" in capsys.readouterr().err
+
+
 def test_import_that_reads_something_succeeds(tmp_path):
     assert main(["import", "chatgpt", str(fx.chatgpt_export(tmp_path))]) == 0
     assert main(["import", "chatgpt", str(fx.chatgpt_export(tmp_path))]) == 0     # unchanged on the second run
@@ -92,6 +101,10 @@ def test_exports_do_not_reveal_local_paths(tmp_path):
     text = render_memories_plain([MemoryItem(text="Uses Django", scope="project:/home/someone/workspace/acme-api",
                                              status="accepted")])
     assert "acme-api" in text and "/home/someone" not in text
+    from ctxport.adapters._render import render_memories_md
+    md = render_memories_md([MemoryItem(text="Uses Django", scope="project:/home/someone/workspace/acme-api",
+                                        status="accepted")])
+    assert "Project: acme-api" in md and "/home/someone" not in md     # headings of CLAUDE.md / AGENTS.md / profile
 
 
 def test_help_and_small_budget_messages(tmp_path, capsys):
@@ -116,3 +129,32 @@ def test_mcp_remember_answers_every_outcome(tmp_path):
     assert len(s.memories(status=None)) == 1
     s.close()
 
+
+
+def test_short_chinese_name_clause_is_kept():
+    from ctxport.extract import rule_candidates
+    got = rule_candidates("我是果冻，我是滑铁卢大学的学生，我平时写 Python，喜欢简洁的回答。")
+    assert ("我是果冻", "identity") in got and len(got) == 4
+    assert rule_candidates("好的。谢谢你。") == []
+
+
+def test_old_databases_drop_assistant_personas(tmp_path):
+    from ctxport import store as store_mod
+    db = tmp_path / "old.db"
+    s = Store(db)
+    s.upsert_memory(MemoryItem(text="Friendly tutor", platform="chatbox", category="identity", status="accepted",
+                               source_ref="/x/settings.json:agent-soul"))
+    s.upsert_memory(MemoryItem(text="You are a calm tutor", platform="chatbox", category="assistant_prompt",
+                               status="candidate", source_ref="copilot:Tutor"))
+    s.upsert_memory(MemoryItem(text="My own kept prompt", platform="chatbox", category="assistant_prompt",
+                               status="accepted", source_ref="copilot:Mine"))
+    s.upsert_memory(MemoryItem(text="Studies calculus", category="identity", status="accepted"))
+    s.db.execute("PRAGMA user_version = 5")
+    s.commit()
+    s.close()
+    s = Store(db)
+    st = {m.text: m.status for m in s.memories(status=None)}
+    assert s.schema_version() == store_mod.SCHEMA_VERSION
+    assert st == {"Friendly tutor": "rejected", "You are a calm tutor": "rejected", "My own kept prompt": "accepted",
+                  "Studies calculus": "accepted"}
+    s.close()

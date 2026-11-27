@@ -148,7 +148,8 @@ def _rule_candidates(text: str) -> list:
     if not text or len(text) > 20000:
         return found
     for s in _with_clauses(split_sentences(text)):
-        if not (6 <= len(s) <= 200):
+        # Chinese packs more into fewer characters: "我是果冻" (4) is a whole statement
+        if not ((4 if _CJK_CHAR.search(s) else 6) <= len(s) <= 200):
             continue
         if _CODE_HINT.search(s):
             continue

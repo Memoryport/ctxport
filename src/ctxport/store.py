@@ -67,7 +67,7 @@ def trim_tool_text(text: str, keep: int = TOOL_KEEP) -> str:
 #   2. add MIGRATIONS[new_version] = SQL that upgrades a database of the previous version (ALTER TABLE ...),
 #   3. update SCHEMA so brand-new databases are created in the new layout directly.
 # Migrations run in order, each in its own transaction, the next time the store is opened.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 MIGRATIONS: dict = {
     # 2: the full-text index covers dialogue only (FTS_KINDS); the triggers are recreated by FTS_SCHEMA and the
     #    index is rebuilt once after the migration.
@@ -92,7 +92,17 @@ UPDATE memories SET sources = json_array(source_ref) WHERE source_ref IS NOT NUL
     # 5: memories store the size of their bigram set (models.similarity_grams), so the near-duplicate check only
     #    compares memories whose size can reach NEAR_DUPLICATE instead of every memory of the category.
     5: lambda db: _add_sim_n(db),
+    # 6: earlier versions imported an assistant's persona (Chatbox agent-soul, e.g. "Friendly tutor") as an accepted
+    #    *identity* memory and assistant / copilot prompts as candidates; they describe a bot, not the user. Mark them
+    #    rejected (not deleted: the user can still bring one back, and later imports don't add them again).
+    6: lambda db: _reject_assistant_personas(db),
 }
+
+
+def _reject_assistant_personas(db) -> None:
+    db.execute("""UPDATE memories SET status='rejected', updated_at=strftime('%s','now')
+                  WHERE status != 'rejected' AND (source_ref LIKE '%:agent-soul' OR source_ref LIKE '%:agentSoul'
+                        OR (category = 'assistant_prompt' AND status = 'candidate'))""")
 
 
 def _add_sim_n(db) -> None:
