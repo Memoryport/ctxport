@@ -201,7 +201,7 @@ ctxport mcp-config            # 打印 Claude Desktop / Claude Code / Codex / Ge
 claude mcp add --scope user ctxport -- ctxport serve-mcp
 ```
 
-工具：`get_user_memory()`、`search_history(query, platform?, limit)`、`list_recent_conversations(platform?, limit)`、`get_conversation(conversation_id, last_n)`、`remember(fact, category)`（保存为候选记忆，需你在 `ctxport memories edit` 中确认后才会生效和导出）。兼容 mcp 1.x 与 2.x，所有输出经过遮蔽。GUI 应用里找不到 `ctxport` 时请用绝对路径。
+共 6 个工具：`get_user_memory()`（有提炼档案时返回标准版档案，否则返回已确认的记忆）、`search_memory(query, limit)`（搜索完整提炼档案里的每一条事实，用来查档案摘要没写进去的细节）、`search_history(query, platform?, limit)`、`list_recent_conversations(platform?, limit)`、`get_conversation(conversation_id, last_n)`、`remember(fact, category)`（保存为候选记忆，需你在 `ctxport memories edit` 中确认后才会生效和导出）。兼容 mcp 1.x 与 2.x，所有输出经过遮蔽。GUI 应用里找不到 `ctxport` 时请用绝对路径。
 
 ## 隐私
 

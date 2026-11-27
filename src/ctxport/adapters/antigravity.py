@@ -198,6 +198,11 @@ class AntigravityImporter(Importer):
             if (root / "rules").is_dir():
                 units += sorted((root / "rules").glob("*.md"))
             return units
+        if not any((root / d).exists() for d in ("conversations", "brain", "knowledge")):
+            # a parent folder (the home folder or ~/.gemini, as other platforms take): look for the data folders
+            found = [p for base in (root, root / ".gemini") for p in [base / d for d in DATA_DIRS] + [base / "config"]
+                     if p.is_dir()]
+            return [u for p in found for u in self.discover(p)]
         conv_dir = root / "conversations"
         ids = set()
         if conv_dir.is_dir():

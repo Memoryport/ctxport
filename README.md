@@ -232,7 +232,7 @@ ctxport mcp-config            # prints config for Claude Desktop / Claude Code /
 claude mcp add --scope user ctxport -- ctxport serve-mcp
 ```
 
-Tools: `get_user_memory()`, `search_history(query, platform?, limit)`, `list_recent_conversations(platform?, limit)`, `get_conversation(conversation_id, last_n)`, and `remember(fact, category)`, which saves a *candidate* that only takes effect and gets exported after you accept it in `ctxport memories edit`. Works with mcp 1.x and 2.x, and all output is masked. If a GUI app can't find `ctxport`, use its absolute path.
+Six tools: `get_user_memory()` (the distilled profile at standard size when there is one, otherwise your accepted memories), `search_memory(query, limit)` (every fact of the full distilled profile, for details the profile leaves out), `search_history(query, platform?, limit)`, `list_recent_conversations(platform?, limit)`, `get_conversation(conversation_id, last_n)`, and `remember(fact, category)`, which saves a *candidate* that only takes effect and gets exported after you accept it in `ctxport memories edit`. Works with mcp 1.x and 2.x, and all output is masked. If a GUI app can't find `ctxport`, use its absolute path.
 
 ## Privacy
 

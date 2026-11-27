@@ -4,7 +4,8 @@ V1: one JSON  {configVersion, __exported_items, __exported_at, chat-sessions-lis
     (older: "chat-sessions": [...], message.content string)
 V2: zip with manifest.json + sessions/<path>/session.json (+ resources/)
 V3: zip with sessions/<urlencoded id>.jsonl; lines {type: session|thread|message, ...}; settings.json,
-    copilots.json, session-settings.json (agent-memories / copilot-memories / agent-soul → memories)
+    copilots.json, session-settings.json (agent-memories / copilot-memories → memories; the agent's own persona,
+    agent-soul, describes the assistant and is not imported as a memory)
 Local app (auto-detected): <userData>/IndexedDB/file__0.indexeddb.leveldb, localforage DB "chatboxstore",
 store "keyvaluepairs" with the same keys as a V1 backup (values are JSON strings) — read with the pure-Python
 Chromium IndexedDB reader. <userData>/config.json (electron-store) holds settings and, in old versions, sessions.
@@ -108,11 +109,12 @@ def memories_from_settings(obj: Any, source: str, platform: str = "chatbox") -> 
     def walk(o: Any) -> None:
         if isinstance(o, dict):
             for k, v in o.items():
-                if k in ("agent-memories", "copilot-memories", "agent-soul", "agentMemories", "copilotMemories", "agentSoul"):
-                    cat = "identity" if "soul" in k.lower() else "platform_memory"
+                if k in ("agent-memories", "copilot-memories", "agentMemories", "copilotMemories"):
                     for s in json_strings(v, 4):
-                        out.append(MemoryItem(text=s, platform=platform, category=cat, status="accepted",
+                        out.append(MemoryItem(text=s, platform=platform, category="platform_memory", status="accepted",
                                               source_ref=f"{source}:{k}"))
+                elif k in ("agent-soul", "agentSoul"):
+                    continue    # the assistant's persona ("Friendly tutor"), not a fact about the user
                 else:
                     walk(v)
         elif isinstance(o, list):
@@ -171,12 +173,7 @@ class ChatboxImporter(Importer):
             c.meta["source"] = "chatbox-local-indexeddb"
             if "demo" in c.native_id:
                 c.meta["builtin_demo"] = True
-        for name, cp in ((k, v) for k, v in data.items() if k in ("myCopilots",)):
-            for c in cp if isinstance(cp, list) else []:
-                if isinstance(c, dict) and c.get("prompt"):
-                    res.memories.append(MemoryItem(text=str(c["prompt"])[:4000], platform=self.name,
-                                                   category="assistant_prompt", status="candidate", confidence=0.5,
-                                                   source_ref=f"copilot:{c.get('name')}"))
+        # copilot prompts ("You are a patient math tutor") describe an assistant, not the user: not memories
         return res
 
     def load(self, unit: Path) -> ImportResult:

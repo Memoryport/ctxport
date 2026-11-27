@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
-from ..models import Conversation, ImportResult, MemoryItem, Message, OutputFile
+from ..models import Conversation, ImportResult, Message, OutputFile
 from ..utils import Bundle, compact_json, has_table, home, parse_time, sanitize_raw, sqlite_copy, table_columns, text_of
 from ._render import render_memories_md
 from .base import ExportOptions, Exporter, Importer, register
@@ -206,18 +206,7 @@ class CherryStudioImporter(Importer):
             for t in ("agent_session", "agent_sessions"):
                 if has_table(db, t):
                     self._load_agent_session_tables(db, t, res, source or str(path))
-            for t in ("assistant", "agents"):
-                if has_table(db, t):
-                    cols = table_columns(db, t)
-                    pcol = "prompt" if "prompt" in cols else ("instructions" if "instructions" in cols else None)
-                    if not pcol:
-                        continue
-                    where = " WHERE deleted_at IS NULL" if "deleted_at" in cols else ""
-                    for r in db.execute(f'SELECT * FROM "{t}"{where}'):
-                        if r[pcol] and str(r[pcol]).strip():
-                            res.memories.append(MemoryItem(
-                                text=str(r[pcol]).strip()[:4000], platform=self.name, category="assistant_prompt",
-                                status="candidate", confidence=0.5, source_ref=f"{t}:{r['name']}"))
+            # assistant / agent prompts describe a bot, not the user: they are not imported as memories
         return res
 
     def _load_v2(self, db, res: ImportResult, source: str) -> None:
@@ -369,11 +358,7 @@ class CherryStudioImporter(Importer):
         for b in idb.get("message_blocks") or []:
             blocks_by_msg.setdefault(b.get("messageId"), []).append(b)
         names, assistants_by_topic, assistants = self._redux_topics(data.get("localStorage") or {})
-        for a in assistants:
-            if a.get("prompt"):
-                res.memories.append(MemoryItem(text=a["prompt"].strip()[:4000], platform=self.name,
-                                               category="assistant_prompt", status="candidate", confidence=0.5,
-                                               source_ref=f"assistant:{a.get('name')}"))
+        # assistant prompts describe a bot, not the user: they are not imported as memories
         for t in idb.get("topics") or []:
             tid = t.get("id")
             meta_t = names.get(tid, {})

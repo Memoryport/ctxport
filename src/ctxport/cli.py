@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -97,12 +98,23 @@ def _hint_compact(s: Store) -> None:
              "can be trimmed; `ctxport compact` makes the file smaller.")
 
 
+def _explain_empty(r, platform: str, path) -> None:
+    from .adapters import get_importer
+    imp = get_importer(platform)
+    where = f" in {path}" if path else ""
+    info(f"error: nothing was imported: no {imp.label} conversations or memories found{where}. "
+         f"Is it the right platform and file? {imp.how_to_get}")
+
+
 def cmd_import(args) -> int:
     from .pipeline import import_path
     with open_store(args) as s:
         r = import_path(s, args.platform, Path(args.path) if args.path else None, force=args.force, progress=info)
         _print_report(r)
-        return 0 if r.units else 1
+        if r.nothing_imported():
+            _explain_empty(r, args.platform, args.path)
+            return 1
+        return 0
 
 
 def _llm_client(args):
@@ -130,7 +142,11 @@ def cmd_extract(args) -> int:
                  f"{st['no_excerpts']} with nothing in your history; {st['new']} new candidates. "
                  "Review with `ctxport memories edit`.")
         else:
-            st = run_extract(s, llm, platform=args.platform, days=args.days, limit=args.limit, progress=info)
+            try:
+                st = run_extract(s, llm, platform=args.platform, days=args.days, limit=args.limit, progress=info)
+            except RuntimeError as e:  # LLM unreachable or returned an error
+                info(f"extract: {e}")
+                return 2
             info(f"extract[{st['method']}]: {st['conversations']} conversations processed, {st['skipped']} already "
                  f"done, {st['new']} new candidates. Review with `ctxport memories edit`.")
             info(format_coverage(coverage_report(s)))
@@ -332,6 +348,9 @@ def cmd_migrate(args) -> int:
     with open_store(args) as s:
         r = import_path(s, args.source, Path(args.path) if args.path else None, force=args.force, progress=info)
         _print_report(r)
+        if r.nothing_imported():
+            _explain_empty(r, args.source, args.path)
+            return 1
         info(f"extract: {run_extract(s, platform=args.source, progress=info)}")
         n_acc = len(s.memories(status=("accepted",)))
         n_cand = len(s.memories(status=("candidate",)))
@@ -419,11 +438,18 @@ def cmd_handoff(args) -> int:
                 return 2
             earlier = msgs[:-args.last] if len(msgs) > args.last else []
             if earlier:
-                summary = llm.chat([{"role": "system", "content": "Summarize this conversation for handing it to "
-                                     "another assistant: goals, decisions, current state, open questions. Be concise; "
-                                     "use the conversation's language."},
-                                    {"role": "user", "content": render_transcript(earlier, True, 24000)}])
+                try:
+                    summary = llm.chat([{"role": "system", "content": "Summarize this conversation for handing it to "
+                                         "another assistant: goals, decisions, current state, open questions. Be "
+                                         "concise; use the conversation's language."},
+                                        {"role": "user", "content": render_transcript(earlier, True, 24000)}])
+                except RuntimeError as e:  # LLM unreachable or returned an error
+                    info(f"handoff: {e}")
+                    return 2
                 parts.append("### Summary of earlier messages\n" + summary.strip() + "\n")
+            else:
+                info(f"handoff: the conversation has only {len(msgs)} messages, all included as they are; "
+                     "nothing earlier to summarize with --llm")
         elif len(msgs) > args.last:
             parts.append(f"(The first {len(msgs) - args.last} messages are omitted.)\n")
         parts.append("### Recent messages\n" + render_transcript(msgs[-args.last:], redact=True))
@@ -462,6 +488,9 @@ def cmd_profile(args) -> int:
         except RuntimeError as e:  # LLM unreachable or returned an error
             info(f"profile: {e}")
             return 2
+    if st.get("available") and not st["memories"] and not st["topics"]:
+        info(f"--max-chars {args.max_chars} is too small to fit anything; try 600 or more.")
+        return 1
     if not st["memories"] and not st["topics"]:
         info("Nothing to summarize yet. Run `ctxport sync --extract` (or `ctxport import …`) first, "
              "or add facts with `ctxport memories add \"I am …\"`.")
@@ -803,7 +832,7 @@ def build_parser() -> argparse.ArgumentParser:
     q = msub.add_parser("import", help="import a '## heading / - fact' list, e.g. from `ctxport prompt`")
     q.add_argument("file")
     q.add_argument("--platform", default="self-report", help="where the list came from, e.g. chatgpt")
-    msub.add_parser("dedupe", help="merge near-duplicate memories (same category, ~80% alike)")
+    msub.add_parser("dedupe", help="merge near-duplicate memories (same category, ~80%% alike)")
     q = msub.add_parser("coverage", help="which categories are empty, which conversations gave nothing")
     q.add_argument("--json", action="store_true")
     q = msub.add_parser("add")
@@ -978,6 +1007,14 @@ def main(argv: Optional[list] = None) -> int:
         return 2
     except NewerDatabase as e:
         info(str(e))
+        return 2
+    except sqlite3.DatabaseError as e:
+        db = getattr(args, "db", None) or str(default_home() / "ctxport.db")
+        info(f"error: the ctxport database {db} can't be read ({e}). It is not a ctxport database or it is "
+             "damaged. Move it aside (ctxport then starts a new one) or put back a backup; run with "
+             "CTXPORT_DEBUG=1 for details.")
+        if os.environ.get("CTXPORT_DEBUG"):
+            raise
         return 2
     except KeyboardInterrupt:
         return 130

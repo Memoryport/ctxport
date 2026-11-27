@@ -115,7 +115,8 @@ def remember(fact: str, category: str = "general") -> str:
                                        status="candidate", confidence=0.9))
         s.commit()
     return {"new": "Saved as a candidate. The user will review it (`ctxport memories edit`) before it is used.",
-            "updated": "Already known.", "kept": "Already known."}[r]
+            "merged": "Already known (counted as seen again); nothing new was saved."}.get(
+        r, "Already known; nothing new was saved.")
 
 
 TOOLS = [get_user_memory, search_memory, search_history, list_recent_conversations, get_conversation, remember]

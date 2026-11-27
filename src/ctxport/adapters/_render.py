@@ -1,6 +1,7 @@
 """Render memories and conversations as Markdown / plain text."""
 from __future__ import annotations
 
+import re
 from typing import Iterable, Optional
 
 from ..models import Conversation, MemoryItem, Message
@@ -21,6 +22,12 @@ CATEGORY_TITLES = {
 }
 CATEGORY_ORDER = list(CATEGORY_TITLES)
 
+
+
+def project_name(scope: str) -> str:
+    """The project's folder name only: exports go to other services, which don't need the local directory layout."""
+    path = scope.split(":", 1)[-1].rstrip("/\\")
+    return re.split(r"[/\\]", path)[-1] or path
 
 def _cat_key(c: str) -> int:
     return CATEGORY_ORDER.index(c) if c in CATEGORY_ORDER else len(CATEGORY_ORDER)
@@ -69,7 +76,7 @@ def render_memories_plain(memories: list, redact: bool = True) -> str:
     lines = []
     for m in memories:
         t = " ".join(maybe(m.text, redact).split())
-        scope = "" if m.scope == "global" else f" (project {m.scope.split(':', 1)[-1]})"
+        scope = "" if m.scope == "global" else f" (project {project_name(m.scope)})"
         lines.append(f"- {t}{scope}")
     return "\n".join(lines) + ("\n" if lines else "")
 

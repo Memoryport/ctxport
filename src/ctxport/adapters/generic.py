@@ -84,8 +84,8 @@ class OpenAIMessagesImporter(Importer):
                 if text or kind == "message":
                     conv.messages.append(Message(role=role, text=text, kind=kind, model=m.get("model"),
                                                  created_at=parse_time(m.get("timestamp") or m.get("created_at"))))
-            if not conv.created_at:
-                conv.created_at = unit.stat().st_mtime
+            # no time in the file: leave it unknown (the file's own date is when it was saved, not when the
+            # conversation happened, and would make old chats look recent)
             res.conversations.append(conv.finalize())
         if not res.conversations:
             res.warnings.append("no messages found")

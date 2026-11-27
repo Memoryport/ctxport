@@ -68,7 +68,7 @@ def test_chatbox_local_auto_detected(tmp_path, monkeypatch):
     assert [(m.role, m.text) for m in c.messages] == [("user", "本地问题 local question"), ("assistant", "local answer")]
     texts = {m.text: m for m in s.memories(status=None)}
     assert texts["Likes green tea"].status == "accepted"
-    assert texts["You are a calm tutor"].status == "candidate"
+    assert "You are a calm tutor" not in texts       # a copilot prompt describes the bot, not the user
     assert s.search("本地问题")[0]["conversation_id"] == "chatbox:loc1"
     s.close()
 
@@ -84,7 +84,7 @@ def test_cherry_local_auto_detected(tmp_path, monkeypatch):
     assert [(m.role, m.kind, m.text) for m in c.messages] == [
         ("user", "message", "樱桃问题"), ("assistant", "reasoning", "hmm"), ("assistant", "message", "樱桃回答")]
     assert c.model == "qwen-x"
-    assert any(m.text == "Be precise" for m in s.memories(status=None))
+    assert not any(m.text == "Be precise" for m in s.memories(status=None))   # assistant prompt
     s.close()
 
 

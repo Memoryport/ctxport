@@ -58,7 +58,9 @@ def test_secrets_and_identifiers_never_become_memories():
                  "My password is hunter2!, I use it everywhere",
                  "我的手机号是 13812345678"):
         assert rule_candidates(text) == [], text
-    assert rule_candidates("我是一名后端工程师，目前在杭州工作。") == [("我是一名后端工程师，目前在杭州工作", "identity")]
+    # two statements joined by a comma become two facts
+    assert rule_candidates("我是一名后端工程师，目前在杭州工作。") == [("我是一名后端工程师", "identity"),
+                                                                ("我目前在杭州工作", "work")]
     assert parse_answer("I use VS Code [e1]. My token is ghp_abcdefghijklmnopqrstuvwxyz0123456789 [e1].",
                         {"e1": "c"}) == [("I use VS Code.", ["c"])]
     assert parse_memory_list("## editor\n- VS Code\n- 银行卡号 6222021234567890123\n") == [("tooling", "editor", "VS Code")]

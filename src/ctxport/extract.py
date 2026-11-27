@@ -122,11 +122,32 @@ def rule_candidates(text: str) -> list:
     return [(s, c) for s, c in _rule_candidates(text) if not is_sensitive(s)]
 
 
+_ZH_CLAUSE = re.compile(r"[，；;]\s*")
+_CJK_CHAR = re.compile(r"[\u4e00-\u9fff]")
+
+
+def _with_clauses(sentences: list) -> list:
+    """Chinese often strings several statements together with commas ("我是果冻，我是滑铁卢的学生，我平时写
+    Python"). When at least two comma-separated clauses are facts on their own, judge each clause separately."""
+    out = []
+    for s in sentences:
+        if _CJK_CHAR.search(s) and not _QUESTION_END.search(s):
+            parts = [p.strip() for p in _ZH_CLAUSE.split(s) if p.strip()]
+            if parts and parts[0].startswith("我"):   # "…，喜欢简洁的回答" keeps its subject
+                parts = [p if p.startswith(("我", "I ")) else "我" + p for p in parts]
+            hits = [p for p in parts if any(rx.search(p) for rx, _ in ZH_RULES + EN_RULES)]
+            if len(parts) > 1 and len(hits) >= 2:
+                out += parts
+                continue
+        out.append(s)
+    return out
+
+
 def _rule_candidates(text: str) -> list:
     found = []
     if not text or len(text) > 20000:
         return found
-    for s in split_sentences(text):
+    for s in _with_clauses(split_sentences(text)):
         if not (6 <= len(s) <= 200):
             continue
         if _CODE_HINT.search(s):

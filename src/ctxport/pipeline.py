@@ -23,7 +23,13 @@ class SyncReport:
     messages: int = 0
     memories_new: int = 0
     kept_newer: int = 0
+    empty: int = 0          # units that were read but held no conversation and no memory
     warnings: list = field(default_factory=list)
+
+    def nothing_imported(self) -> bool:
+        """True when this import found nothing to import: no unit at all, or every unit it read was empty
+        (wrong platform, an unrelated or broken file). Unchanged units skipped by a re-run do not count."""
+        return self.units == 0 or (self.imported > 0 and self.imported == self.empty and self.skipped == 0)
 
 
 def import_unit(store: Store, imp: Importer, unit: Path, force: bool, report: SyncReport) -> None:
@@ -64,6 +70,8 @@ def import_unit(store: Store, imp: Importer, unit: Path, force: bool, report: Sy
     if kept:
         report.warnings.append(f"{Path(unit).name}: kept the stored copy of {kept} conversation(s) "
                                "because it is newer than this file (use --force to overwrite)")
+    if not any(c.messages or c.branches for c in res.conversations) and not res.memories:
+        report.empty += 1
     store.set_source(key, imp.name, str(unit), sig, len(res.conversations), len(res.warnings))
     unit = Path(unit)
     if unit.name.endswith(".json.gz") and not unit.with_name(unit.name[:-3]).exists():

@@ -69,7 +69,9 @@ def test_connect_refuses_to_overwrite_broken_json(fake_home):
     assert "error" in connect.status("claude-desktop")
 
 
-def test_connect_codex_toml(fake_home):
+def test_connect_codex_toml(fake_home, monkeypatch):
+    # as when ctxport is installed; a source checkout without it on PATH uses `python -m ctxport` instead
+    monkeypatch.setattr(connect.shutil, "which", lambda name: "/usr/local/bin/ctxport" if name == "ctxport" else None)
     p = connect.TARGETS["codex"].path()
     p.parent.mkdir(parents=True)
     original = 'model = "gpt-x"\n\n[mcp_servers.other]\ncommand = "o"\n'

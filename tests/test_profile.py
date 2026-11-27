@@ -36,7 +36,7 @@ def test_profile_falls_back_to_candidates_then_prefers_accepted(tmp_path):
     s.commit()
     text, st = profile.build_profile(s)
     assert not st["used_candidates"] and "short answers" in text and "backend engineer" not in text
-    assert "ruff" not in text  # agent instructions stay out by default
+    assert "ruff" in text  # agent instructions are in, as in exports to CLAUDE.md / AGENTS.md
     text, _ = profile.build_profile(s, all_categories=True, include_candidates=True, topics=0)
     assert "ruff" in text and "backend engineer" in text and "Postgres" not in text
     s.close()

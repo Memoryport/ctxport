@@ -56,6 +56,19 @@ All notable changes to ctxport are listed here. The format follows
   fresh import about 10% faster. A power cut can lose the last commits but cannot corrupt the database.
 
 ### Fixed
+- `import` and `migrate` exit with 1 and say why when nothing was imported (a wrong platform, an empty, broken or
+  unrelated file), instead of reporting "imported 1" and exiting 0; `migrate` then stops before exporting.
+- An unreachable LLM is one clear line with exit code 2 in `extract --llm` and `handoff --llm` too, as in `profile`.
+- A database that is not a ctxport database or is damaged gives a clear message instead of a Python traceback.
+- Conversations without any time in the file (generic JSON) keep an unknown date instead of the file's date.
+- Chinese statements joined by commas ("我是…，我在…，平时…") become separate memories, as English sentences do.
+- An assistant's persona (Chatbox agent-soul) and assistant / copilot prompts (Chatbox, Cherry Studio) are no longer
+  imported as memories: they describe a bot, not the user, and the persona was even filed as the user's identity.
+- `profile` includes agent instructions, as exports to CLAUDE.md / AGENTS.md do.
+- Antigravity can be imported from a parent folder (the home folder or `~/.gemini`), like the other platforms.
+- Exported project memories name the project folder only, not its full local path.
+- `memories --help` shows the dedupe description instead of argparse internals; `profile --max-chars` that is too
+  small to fit anything says so; MCP `remember` answers every outcome; the README lists all six MCP tools.
 - Distilling with Codex works with current Codex versions, which removed `--full-auto` (the sandbox is now chosen
   with `-s workspace-write` when `--full-auto` is missing).
 - Agent distillation no longer loads the user's own MCP servers, settings and global CLAUDE.md for every batch

@@ -197,8 +197,8 @@ def test_cherry_local(tmp_path):
     assert dialogue(convs["agent_session/s1"]) == [("user", "agent task")]
     a = convs["agent-session/se"]
     assert dialogue(a) == [("user", "agent db question"), ("assistant", "agent db answer")] and a.project == "Coder"
-    prompts = {m.text for m in res.memories if m.category == "assistant_prompt"}
-    assert {"You are a patient math tutor.", "Write tests first"} <= prompts
+    texts = {m.text for m in res.memories}                       # assistant prompts are not facts about the user
+    assert not {"You are a patient math tutor.", "Write tests first"} & texts
 
 
 def test_cherry_backups(tmp_path):
@@ -209,7 +209,7 @@ def test_cherry_backups(tmp_path):
     assert c.title == "Old topic" and c.project == "Default"
     assert dialogue(c) == [("user", "v1 question"), ("assistant", "v1 answer")]
     assert any(m.kind == "reasoning" for m in c.messages)
-    assert any(m.text == "Be kind" for m in res.memories)
+    assert not any(m.text == "Be kind" for m in res.memories)   # an assistant prompt, not a user fact
 
 
 # ------------------------------------------------------------------ Chatbox
@@ -226,7 +226,9 @@ def test_chatbox_versions(tmp_path):
     c = convs["s/3"]
     assert dialogue(c) == [("user", "v3 question"), ("assistant", "v3 answer")]
     assert [m.text for m in c.branches[0]] == ["v3 old thread"]
-    assert {"Prefers short answers", "Friendly tutor", "Studies calculus"} <= {m.text for m in res.memories}
+    mems = {m.text: m for m in res.memories}
+    assert {"Prefers short answers", "Studies calculus"} <= set(mems)
+    assert "Friendly tutor" not in mems                          # the agent's persona is not the user's identity
 
 
 # ------------------------------------------------------------------ Takeout / generic

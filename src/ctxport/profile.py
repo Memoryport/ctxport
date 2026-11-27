@@ -11,10 +11,10 @@ from typing import Optional
 from .adapters._render import render_memories_md
 from .redact import maybe
 
-# Categories that describe the person. Agent instruction files and assistant prompts are rules for tools,
-# often long, so they stay out of a background summary unless asked for.
+# Categories that describe the person, and how they want assistants to work (the same memories exports write into
+# CLAUDE.md / AGENTS.md). Assistant prompts describe a bot, not the user, and stay out unless asked for.
 PROFILE_CATEGORIES = ("identity", "work", "preference", "project", "tooling", "custom_instructions",
-                      "platform_memory", "general")
+                      "agent_instructions", "platform_memory", "general")
 
 INTRO = (
     "Below is background about me, gathered from my own conversations with other AI assistants{sources}. "
@@ -127,7 +127,7 @@ def build_profile(store, *, include_candidates: bool = False, all_categories: bo
             text = (cut[: cut.rfind("\n")] if "\n" in cut else cut).rstrip() + "\n"
     info = {"memories": len(shown_mems), "topics": len(shown_titles), "used_candidates": used_candidates,
             "omitted": len(mems) - len(shown_mems) + len(titles) - len(shown_titles),
-            "summary": bool(summary), "platforms": labels, "chars": len(text)}
+            "summary": bool(summary), "platforms": labels, "chars": len(text), "available": len(mems) + len(titles)}
     return text, info
 
 
