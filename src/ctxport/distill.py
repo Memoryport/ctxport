@@ -554,6 +554,89 @@ def render_balanced(canon: list, max_chars: int, headers: bool = True) -> tuple:
     return "\n".join(parts), len(chosen) / max(1, len(canon))
 
 
+def _year(ts) -> str:
+    return time.strftime("%Y", time.localtime(ts)) if ts else "?"
+
+
+def facts_by_year(canon: list) -> dict:
+    """{year a fact was first stated: [canonical facts]}, oldest year first."""
+    out = {}
+    for c in canon:
+        out.setdefault(_year(c.get("first") or c.get("last")), []).append(c)
+    return dict(sorted(out.items()))
+
+
+def year_shares(groups: dict, budget: int, floor: float = 0.08) -> dict:
+    """Split a budget across years: share ~ sqrt(#facts that year), at least `floor` of it each. Importance decays
+    with recency, so a single importance cut drops whole early years; giving every year a share keeps them (on the
+    author's own history a per-year profile beat ChatGPT's own memory export at the same length; a pure importance
+    cut answered almost nothing, see benchmarks/migration)."""
+    if not groups:
+        return {}
+    w = {y: len(v) ** 0.5 for y, v in groups.items()}
+    tot = sum(w.values()) or 1
+    raw = {y: max(floor, w[y] / tot) for y in groups}
+    norm = sum(raw.values())
+    return {y: int(budget * raw[y] / norm) for y in groups}
+
+
+def render_years(canon: list, max_chars: int) -> tuple:
+    """Deterministic: each year gets a share of max_chars, filled category-balanced and dated (render_balanced).
+    Returns (markdown, coverage_fraction)."""
+    groups = facts_by_year(canon)
+    parts, kept = [], 0
+    for y, share in year_shares(groups, max_chars).items():
+        head = f"## {y}\n\n"
+        text, frac = render_balanced(groups[y], max(0, share - len(head) - 2), headers=False)
+        if text.strip():
+            parts.append(head + text)
+            kept += round(frac * len(groups[y]))
+    return "\n".join(parts)[:max_chars], kept / max(1, len(canon))
+
+
+YEAR_PROMPT = """You write one year's section of a person's long-term profile for AI assistants. Below are facts
+the person first stated in {year}, each with the month it was last mentioned and how often it came up (xN). Hard
+limit: {budget} characters (stay under). Keep the most identifying and useful facts: who they were then, school or
+work, places, people, devices, projects, preferences and plans. If a later fact superseded one, add "(as of {year})".
+Write compact bullet points in the language the facts are mostly in. Do not invent anything; output only the bullets."""
+YEAR_LISTING_CHARS = 40000
+
+
+def write_years(canon: list, max_chars: int, chat: Callable, log: Optional[RunLog] = None) -> tuple:
+    """Model-written profile: one call per year, each within its share. A year whose call fails falls back to the
+    deterministic rendering, so the result never loses a year. Returns (markdown, years_written_by_model)."""
+    groups = facts_by_year(canon)
+    parts, written = [], 0
+    for y, share in year_shares(groups, max_chars).items():
+        head = f"## {y}\n\n"
+        room = max(0, share - len(head) - 2)
+        listing, used = [], 0
+        for c in sorted(groups[y], key=lambda c: (-(c.get("count", 1)), -(c.get("last") or 0))):
+            ln = f"- [{_d(c.get('last'))}] (x{c.get('count', 1)}) {c['text']}"
+            if used + len(ln) > YEAR_LISTING_CHARS:
+                break
+            listing.append(ln)
+            used += len(ln) + 1
+        body = ""
+        try:
+            body = chat(YEAR_PROMPT.format(year=y, budget=room), "\n".join(listing)).strip()
+            body = "\n".join(l for l in body.splitlines() if l.strip())
+        except Exception:
+            body = ""
+        if body and not is_sensitive(body):
+            written += 1
+            if len(body) > room:   # keep whole lines
+                cut = body[:room]
+                body = cut[:cut.rfind("\n")] if "\n" in cut else cut
+        else:
+            body, _ = render_balanced(groups[y], room, headers=False)
+        if body.strip():
+            parts.append(head + body)
+    if log is not None:
+        log.coverage["years_written"] = written
+    return "\n\n".join(parts)[:max_chars], written
+
+
 def profile_file(size: str = "full") -> Path:
     """profile.md (full), profile.standard.md, profile.compact.md or profile.short.md (ChatGPT)."""
     name = {"compact": "profile.compact.md", "standard": "profile.standard.md", "short": "profile.short.md"}.get(size)
@@ -568,7 +651,8 @@ def out_dir() -> Path:
 
 
 def run(store: Store, client=None, platform: Optional[str] = None, limit: Optional[int] = None,
-        polish: bool = True, progress: Optional[Callable[[str], None]] = None) -> dict:
+        polish: bool = True, progress: Optional[Callable[[str], None]] = None,
+        writer: Optional[Callable[[str, str], str]] = None) -> dict:
     """Full pipeline. `client` is an LLMClient (or anything with .chat(messages) and .model / .usage);
     None = only cached cards and deterministic L2/L3."""
     log = RunLog(model=getattr(client, "model", "") or "")
@@ -583,8 +667,17 @@ def run(store: Store, client=None, platform: Optional[str] = None, limit: Option
     doc, sections = write_document(canon, chat if polish else None, log)
     full = strip_ids(doc)
     cov = coverage(doc, canon)
-    short, short_cov = render_budget(canon, sections, 1400)
-    tiers = {k: render_balanced(canon, n) for k, n in PROFILE_SIZES.items()}
+    # length-limited tiers: a share per year, written by the model when one is available (writer, or the API
+    # client when polishing), otherwise rendered without a model
+    write = writer or (chat if polish else None)
+    sizes = {"short": 1400, **PROFILE_SIZES}
+    rendered = {k: render_years(canon, n) for k, n in sizes.items()}
+    if write is not None:
+        if progress:
+            progress(f"writing per-year profiles ({', '.join(f'{k} {n}' for k, n in sizes.items())} chars)")
+        rendered = {k: (write_years(canon, n, write, log)[0], rendered[k][1]) for k, n in sizes.items()}
+    short, short_cov = rendered.pop("short")
+    tiers = rendered
     log.coverage = {"full": round(cov, 4), "chatgpt_1400": round(short_cov, 4),
                     **{k: round(v[1], 4) for k, v in tiers.items()}}
     log.usage = dict(getattr(client, "usage", {}) or {})
@@ -1087,7 +1180,9 @@ def run_agent(store: Store, folder: Path, agent: str, progress: Optional[Callabl
     imported after every batch, so an interrupted run resumes. `should_stop` is checked every second; when it turns
     true the running batches are terminated and no new ones start. `on_batch(finished, total)` reports progress.
     Only the agent processes run in worker threads; the store is used from this thread alone."""
+    import shutil
     import subprocess
+    import tempfile
     from concurrent.futures import ThreadPoolExecutor, as_completed
     folder = Path(folder).expanduser()
     exe = agent_commands().get(agent)
@@ -1112,7 +1207,9 @@ def run_agent(store: Store, folder: Path, agent: str, progress: Optional[Callabl
                 f"{', '.join(names)}. Write one card per file into cards/. Then stop.")
         if progress:
             progress(f"{agent}: batch {i}/{len(batches)} ({len(names)} conversations)")
+        home_tmp = tempfile.mkdtemp(prefix="ctxport-agent-") if agent == "codex" else None
         p = subprocess.Popen(agent_command(agent, exe, task, model, effort), cwd=str(folder),
+                             env=agent_env(agent, Path(home_tmp)) if home_tmp else None,
                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         start = time.time()
         while True:
@@ -1128,6 +1225,8 @@ def run_agent(store: Store, folder: Path, agent: str, progress: Optional[Callabl
                         p.kill()
                         out, err = p.communicate()
                     break
+        if home_tmp:
+            shutil.rmtree(home_tmp, ignore_errors=True)
         timed_out = time.time() - start > timeout
         why = "timed out" if timed_out else (agent_error(agent, out or "", err or "") or f"exited {p.returncode}")
         return {"i": i, "names": names, "rc": p.returncode, "usage": parse_usage(agent, out or ""),
@@ -1239,6 +1338,44 @@ def lean_pending(store: Store, platform: Optional[str] = None, limit: Optional[i
             "cards": cards, "tokens_in": tokens, "tokens_out": len(items) * 300}
 
 
+def agent_env(agent: str, tmp: Path) -> Optional[dict]:
+    """Environment for one agent call. Codex reads the user's global ~/.codex/AGENTS.md even with
+    --ignore-user-config, and ctxport itself may have written the user's profile there, so a card would see the old
+    profile instead of only the conversation (and a measured leak test reproduced the user's name and email from an
+    empty prompt). Codex therefore gets a private CODEX_HOME that links only the login."""
+    import os
+    if agent != "codex":
+        return None
+    real = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").expanduser()
+    home = Path(tmp) / "codex-home"
+    home.mkdir(parents=True, exist_ok=True)
+    if (real / "auth.json").exists() and not (home / "auth.json").exists():
+        (home / "auth.json").symlink_to(real / "auth.json")
+    return dict(os.environ, CODEX_HOME=str(home))
+
+
+def agent_writer(agent: str, model: str = "", effort: str = "", timeout: int = 600) -> Optional[Callable]:
+    """chat(system, user) -> str through the user's own Claude Code / Codex (one tool-less call each), used to
+    write the per-year profile sections after an agent run. None when the agent is not installed."""
+    import subprocess
+    import tempfile
+    exe = agent_commands().get(agent)
+    if not exe:
+        return None
+
+    def chat(system: str, user: str) -> str:
+        with tempfile.TemporaryDirectory(prefix="ctxport-write-") as tmp:
+            out_file = Path(tmp) / "reply.txt"
+            r = subprocess.run(direct_command(agent, exe, model, effort, str(out_file)), cwd=tmp,
+                               input=f"{system}\n\n{user}", capture_output=True, text=True, timeout=timeout,
+                               env=agent_env(agent, Path(tmp)))
+            reply = _direct_reply(agent, r.stdout or "", out_file)
+        if r.returncode != 0 or not reply.strip():
+            raise RuntimeError(agent_error(agent, r.stdout or "", r.stderr or "") or f"exited {r.returncode}")
+        return reply
+    return chat
+
+
 def direct_command(agent: str, exe: str, model: str = "", effort: str = "", out_file: str = "") -> list:
     """A one-shot, tool-less call that reads the prompt from stdin."""
     if model and not _MODEL_RE.fullmatch(model):
@@ -1321,6 +1458,7 @@ def run_direct(store: Store, agent: str, model: str = "", effort: str = "", limi
         with tempfile.TemporaryDirectory(prefix="ctxport-direct-") as tmp:
             out_file = Path(tmp) / "reply.txt"
             p = subprocess.Popen(direct_command(agent, exe, model, effort, str(out_file)), cwd=tmp,
+                                 env=agent_env(agent, Path(tmp)),
                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             start = time.time()
             prompt = lean_prompt(group)

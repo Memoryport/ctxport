@@ -648,7 +648,8 @@ def cmd_distill(args) -> int:
                     info(str(e))
                     return 2
                 info(f"{args.agent}: {r['batches_run']} batches run, {r['batches_failed']} failed, {r['imported']} cards")
-            res = D.run(s, None, args.platform, args.limit, polish=False, progress=info)
+            writer = D.agent_writer(args.agent) if args.agent in ("claude-code", "codex") else None
+            res = D.run(s, None, args.platform, args.limit, polish=False, progress=info, writer=writer)
         elif not args.api:
             info("Choose how to distil (no API key needed):\n"
                  "  ctxport distill --agent claude-code   run your Claude Code (or --agent codex) batch by batch\n"

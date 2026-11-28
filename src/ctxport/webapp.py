@@ -407,15 +407,16 @@ def _distill_thread(job) -> None:
     threading.Thread(target=work, daemon=True).start()
 
 
-def build_profile_now(note=None) -> dict:
-    """Import whatever cards the agent folder / web replies hold, then merge and write (no model needed)."""
+def build_profile_now(note=None, writer=None) -> dict:
+    """Import whatever cards the agent folder / web replies hold, then merge and write. With `writer` (the agent the
+    user just ran) the length-limited profiles are written per year by that agent; otherwise no model is needed."""
     from . import distill as D
     with Store() as s:
         if (D.work_dir("agent") / "cards").is_dir():
             D.agent_import(s, D.work_dir("agent"))
         if (D.work_dir("web") / "responses").is_dir():
             D.manual_import(s, D.work_dir("web"))
-        r = D.run(s, None, polish=False, progress=note)
+        r = D.run(s, None, polish=False, progress=note, writer=writer)
     return {"chars": r["chars"], "log": r["log"]}
 
 
@@ -491,7 +492,7 @@ def distill_agent(agent: str, model: str = "", effort: str = "", limit: Optional
                     for a, m, e in plan:
                         r = one_pass(s, a, m, e, note)
                         if not r or not r.get("halted"):
-                            return build_profile_now(note)       # finished, nothing left, or stopped by the user
+                            return build_profile_now(note, D.agent_writer(a, m, e))       # finished, nothing left, or stopped by the user
                         reasons.append(r["halted"])
                         with _DISTILL_LOCK:
                             _DISTILL["halted"] = r["halted"]
